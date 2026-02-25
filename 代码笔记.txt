@@ -1,0 +1,34 @@
+1. http://localhost:8080/test/jade-status查看是否启动成功
+http://localhost:8080/swagger-ui/index.html#/%E5%9B%BE%E4%B9%A6%E5%80%9F%E8%BF%98/borrowRequest
+2. 在启动类中添加System.setProperty("java.awt.headless", "false");以打开gui界面
+3. 重置数据库中数据的代码：
+-- 重置图书副本表（关键：理科馆0本，文科馆2本，状态重置为可借）
+UPDATE tb_book_copy SET
+    library_id = 2,           -- 回到文科馆
+    status = 'AVAILABLE',      -- 重置为可借状态
+    update_time = NOW()
+WHERE biblio_id = 1;          -- 针对《Java编程》这本书
+
+-- 如果之前测试产生了新的调拨记录，可能需要指定具体的copy_id重置：
+UPDATE tb_book_copy SET library_id = 2, status = 'AVAILABLE' WHERE id IN (1001, 1002);
+
+-- 重置馆藏书目统计表（关键：同步库存数量）
+UPDATE tb_library_biblio_stats SET
+    stock_count = 0,          -- 理科馆清0
+    borrow_count_30d = 0,
+    reservation_pending_count = 0
+WHERE library_id = 1 AND biblio_id = 1;
+
+UPDATE tb_library_biblio_stats SET
+    stock_count = 2,          -- 文科馆恢复2本
+    borrow_count_30d = 5,
+    reservation_pending_count = 0
+WHERE library_id = 2 AND biblio_id = 1;
+
+-- 清空调拨记录表（避免历史数据干扰，可选）
+-- TRUNCATE TABLE tb_book_transfer;
+-- 或者只清空与当前测试书相关的：
+DELETE FROM tb_book_transfer WHERE copy_id IN (1001, 1002);
+
+-- 清空预约表（如果有测试数据）
+-- TRUNCATE TABLE tb_book_reservation;

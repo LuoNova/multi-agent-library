@@ -1,0 +1,56 @@
+-- 1. 重置图书副本表（理科馆0本AVAILABLE，文科馆2本AVAILABLE）
+UPDATE tb_book_copy SET
+    library_id = 2,
+    status = 'AVAILABLE',
+    local_borrow_count = 0,
+    last_borrow_time = NULL,
+    update_time = NOW()
+WHERE id IN (1001, 1002);
+
+-- 2. 重置馆藏书目统计表
+UPDATE tb_library_biblio_stats SET
+    stock_count = 0,
+    borrow_count_30d = 0,
+    reservation_pending_count = 0
+WHERE library_id = 1 AND biblio_id = 1;
+
+UPDATE tb_library_biblio_stats SET
+    stock_count = 2,
+    borrow_count_30d = 5,
+    reservation_pending_count = 0
+WHERE library_id = 2 AND biblio_id = 1;
+
+-- 3. 清空调拨记录
+DELETE FROM tb_book_transfer WHERE copy_id IN (1001, 1002);
+
+-- 4. 清空借阅记录（避免"已借阅该书"的限制）
+DELETE FROM tb_book_borrow;
+
+-- 5. 重置用户借阅计数
+UPDATE tb_user SET current_borrow_count = 0 WHERE id = 1;
+
+-- 验证初始状态
+SELECT '副本状态' as check_item;
+SELECT id, library_id, status FROM tb_book_copy WHERE biblio_id = 1;
+SELECT '统计表' as check_item;
+SELECT library_id, stock_count FROM tb_library_biblio_stats WHERE biblio_id = 1;
+
+-- ------阶段2，测试本地有书，直接借书------ --
+-- 手动将第二本书调到理科馆（模拟之前已完成调拨）
+UPDATE tb_book_copy SET library_id = 1, status = 'AVAILABLE' WHERE id = 1002;
+
+-- 更新统计表（理科馆2本，文科馆0本）
+UPDATE tb_library_biblio_stats SET stock_count = 2 WHERE library_id = 1 AND biblio_id = 1;
+UPDATE tb_library_biblio_stats SET stock_count = 0 WHERE library_id = 2 AND biblio_id = 1;
+
+-- 先清空之前的借阅记录（测试用）
+DELETE FROM tb_book_borrow WHERE user_id = 1;
+UPDATE tb_user SET current_borrow_count = 0 WHERE id = 1;
+
+-- ------阶段3，测试全图书馆都没有书，需要进行预约------ --
+-- 将两本书都设为已借出（模拟全馆无库存）
+UPDATE tb_book_copy SET status = 'BORROWED' WHERE id IN (1001, 1002);
+
+-- 或者设为其他状态，只要不是 AVAILABLE
+-- 确保统计表也同步（可选）
+UPDATE tb_library_biblio_stats SET stock_count = 0 WHERE biblio_id = 1;

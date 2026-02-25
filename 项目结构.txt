@@ -1,0 +1,39 @@
+src/main/java/com/library/
+├── MultiAgentLibraryApplication.java  (启动类)
+├── config/
+│   ├── JadeConfig.java               (JADE容器配置)
+│   └── MybatisPlusConfig.java        (MyBatis-Plus分页插件)
+├── agent/                            (所有JADE Agent类)
+│   ├── UserDemandAgent.java          (Manager)
+│   ├── InventoryAgent.java           (Contractor)
+│   ├── SeatAgent.java                (Contractor)
+│   ├── RepairAgent.java              (Contractor)
+│   ├── dto/
+│   │   └── ContractNetMessage.java   (协商消息DTO)
+│   └── base/
+│       ├── ContractNetInitiator.java (协商发起者基类)
+│       └── ContractNetResponder.java (协商响应者基类)
+├── service/                          (Spring业务层)
+│   ├── BookBiblioService.java
+│   ├── BookCopyService.java
+│   ├── LibraryStatsService.java      (统计服务)
+│   └── impl/
+├── mapper/                           (MyBatis-Plus Mapper接口)
+│   ├── BookBiblioMapper.java
+│   ├── BookCopyMapper.java
+│   └── LibraryStatsMapper.java
+├── entity/                           (数据库实体类)
+│   ├── BookBiblio.java
+│   ├── BookCopy.java
+│   └── LibraryStats.java
+├── controller/                       (REST接口)
+│   └── UserRequestController.java    (接收用户请求)
+└── util/
+    ├── AgentLogger.java              (Agent专用日志)
+    └── SpringContextUtil.java        (Agent获取SpringBean的工具)
+
+src/main/resources/
+├── application.yml                   (主配置)
+├── application-dev.yml               (开发环境)
+└── mapper/                           (XML映射文件，如需要)
+    └── xml/

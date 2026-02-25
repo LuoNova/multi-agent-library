@@ -1,0 +1,38 @@
+spring:
+  application:
+    name: multi-agent-library
+
+  datasource:
+    url: jdbc:mysql://localhost:3306/library_db?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai
+    username: root
+    password: 1234
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  jackson:
+    date-format: yyyy-MM-dd HH:mm:ss
+    time-zone: GMT+8
+
+# MyBatis-Plus配置
+mybatis-plus:
+  configuration:
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl  # 开发时打印SQL
+    map-underscore-to-camel-case: true
+  global-config:
+    db-config:
+      id-type: auto  # 数据库自增ID
+      logic-delete-field: deleted  # 软删除字段（如需要）
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+
+# JADE配置
+jade:
+  host: localhost
+  port: 1099
+  gui: true  # 是否启动JADE GUI（调试时用）
+  agents: >
+    demand:com.library.agent.UserDemandAgent;
+    lib1:com.library.agent.InventoryAgent(1,理科馆);
+    lib2:com.library.agent.InventoryAgent(2,文科馆)
+
+server:
+  port: 8080
