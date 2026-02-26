@@ -1,0 +1,25 @@
+#业务规则配置示例
+#将此配置添加到application.yml或application.properties中以启用动态配置
+
+library:
+  business-rules:
+    #借阅规则
+    borrow:
+      max-borrow-count: 10              #最大借阅数量
+      default-borrow-days: 30           #默认借阅期限（天）
+
+    #预约规则
+    reservation:
+      expire-days: 3                    #预约有效期（天）
+      max-queue-size: 100               #预约排队最大人数
+
+    #调拨规则
+    transfer:
+      reserve-hours: 24                 #调拨后预留时间（小时）
+      estimated-minutes: 30             #调拨预计时间（分钟）
+      max-distance: 50.0                #最大调拨距离（公里）
+
+    #信用规则
+    credit:
+      daily-deduction: 2                #借书逾期每日扣分
+      ceiling-deduction: 20             #借书逾期上限扣分

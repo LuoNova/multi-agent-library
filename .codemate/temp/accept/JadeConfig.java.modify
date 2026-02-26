@@ -1,6 +1,5 @@
 package com.library.config;
 
-import com.library.util.SpringContextUtil;
 import jade.core.Profile;
 import jade.core.ProfileImpl;
 import jade.core.Runtime;
@@ -68,30 +67,11 @@ public class JadeConfig implements ApplicationRunner {
         }
     }
 
-    //优化Agent启动时机，确保在Spring完全初始化后才启动Agent，修复循环依赖风险
     @Override
     public void run(ApplicationArguments args) throws Exception {
         if (mainContainer == null) return;
 
-        //等待Spring完全初始化，使用SpringContextUtil的初始化状态检查
-        log.info("等待Spring容器完全初始化...");
-        int maxWaitSeconds = 30;
-        int waitedSeconds = 0;
-
-        while (!SpringContextUtil.isInitialized() && waitedSeconds < maxWaitSeconds) {
-            Thread.sleep(500);
-            waitedSeconds += 0.5;
-        }
-
-        if (!SpringContextUtil.isInitialized()) {
-            log.error("Spring容器初始化超时，取消启动Agent");
-            return;
-        }
-
-        log.info("Spring容器已初始化，开始启动JADE Agents");
-
-        //额外等待500ms确保所有Bean都完全初始化
-        Thread.sleep(500);
+        Thread.sleep(1000); //等待Spring初始化
 
         if (jadeProperties.getAgents() != null && !jadeProperties.getAgents().isEmpty()) {
             startAgents(mainContainer, jadeProperties.getAgents());

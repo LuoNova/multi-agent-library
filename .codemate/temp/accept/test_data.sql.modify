@@ -1,0 +1,181 @@
+-- ========================================
+-- 多智能体图书馆管理系统 - 测试数据脚本
+-- ========================================
+-- 说明：此脚本用于重置数据库，准备测试所需的数据
+-- 包含：用户、图书馆、图书目录、图书副本等基础数据
+-- 用途：支持Swagger测试和功能验证
+-- ========================================
+
+-- 清理现有数据（按依赖关系倒序删除）
+DELETE FROM tb_book_borrow;
+DELETE FROM tb_book_reservation;
+DELETE FROM tb_book_transfer;
+DELETE FROM tb_book_copy;
+DELETE FROM tb_book_biblio;
+DELETE FROM tb_library_biblio_stats;
+DELETE FROM tb_user;
+DELETE FROM tb_library;
+
+-- 重置自增ID
+ALTER TABLE tb_book_borrow AUTO_INCREMENT = 1;
+ALTER TABLE tb_book_reservation AUTO_INCREMENT = 1;
+ALTER TABLE tb_book_transfer AUTO_INCREMENT = 1;
+ALTER TABLE tb_book_copy AUTO_INCREMENT = 1;
+ALTER TABLE tb_book_biblio AUTO_INCREMENT = 1;
+ALTER TABLE tb_library_biblio_stats AUTO_INCREMENT = 1;
+ALTER TABLE tb_user AUTO_INCREMENT = 1;
+ALTER TABLE tb_library AUTO_INCREMENT = 1;
+
+-- ========================================
+-- 1. 插入图书馆数据
+-- ========================================
+INSERT INTO tb_library (id, name, address, phone, open_hours, created_at, updated_at) VALUES
+(1, '理科馆', '校园北区', '010-12345678', '08:00-22:00', NOW(), NOW()),
+(2, '文科馆', '校园南区', '010-87654321', '08:00-22:00', NOW(), NOW()),
+(3, '工程馆', '校园东区', '010-11112222', '09:00-21:00', NOW(), NOW());
+
+-- ========================================
+-- 2. 插入用户数据
+-- ========================================
+INSERT INTO tb_user (id, username, password, real_name, email, phone, status, current_borrow_count, credit_score, created_at, updated_at) VALUES
+-- 正常用户（有借阅额度）
+(1, 'zhangsan', '$2a$10$N.zmdr9k7uOCQb376NoUnuTJ8iAt6Z5EHsM8lE9lBOsl7iKTVKIUi', '张三', 'zhangsan@example.com', '13800138001', 'ACTIVE', 0, 100, NOW(), NOW()),
+(2, 'lisi', '$2a$10$N.zmdr9k7uOCQb376NoUnuTJ8iAt6Z5EHsM8lE9lBOsl7iKTVKIUi', '李四', 'lisi@example.com', '13800138002', 'ACTIVE', 0, 100, NOW(), NOW()),
+(3, 'wangwu', '$2a$10$N.zmdr9k7uOCQb376NoUnuTJ8iAt6Z5EHsM8lE9lBOsl7iKTVKIUi', '王五', 'wangwu@example.com', '13800138003', 'ACTIVE', 0, 100, NOW(), NOW()),
+-- 冻结用户（无借阅额度）
+(4, 'zhaoliu', '$2a$10$N.zmdr9k7uOCQb376NoUnuTJ8iAt6Z5EHsM8lE9lBOsl7iKTVKIUi', '赵六', 'zhaoliu@example.com', '13800138004', 'FROZEN', 0, 50, NOW(), NOW());
+
+-- ========================================
+-- 3. 插入图书目录数据
+-- ========================================
+INSERT INTO tb_book_biblio (id, isbn, title, author, publisher, publish_year, category, total_copies, created_at, updated_at) VALUES
+-- 计算机类书籍
+(1, '9787111213826', 'Java编程思想', 'Bruce Eckel', '机械工业出版社', 2020, '计算机', 10, NOW(), NOW()),
+(2, '9787111544937', '深入理解Java虚拟机', '周志明', '机械工业出版社', 2019, '计算机', 8, NOW(), NOW()),
+(3, '9787115428028', '算法导论', 'Thomas H. Cormen', '人民邮电出版社', 2018, '计算机', 6, NOW(), NOW()),
+-- 数学类书籍
+(4, '9787040205497', '高等数学', '同济大学数学系', '高等教育出版社', 2019, '数学', 15, NOW(), NOW()),
+(5, '9787040413640', '线性代数', '同济大学数学系', '高等教育出版社', 2020, '数学', 12, NOW(), NOW()),
+-- 物理类书籍
+(6, '9787040264799', '大学物理', '程守洙', '高等教育出版社', 2018, '物理', 10, NOW(), NOW()),
+-- 文学类书籍
+(7, '9787020002207', '红楼梦', '曹雪芹', '人民文学出版社', 1996, '文学', 20, NOW(), NOW()),
+(8, '9787020008735', '西游记', '吴承恩', '人民文学出版社', 2008, '文学', 18, NOW(), NOW()),
+-- 历史类书籍
+(9, '9787101003048', '史记', '司马迁', '中华书局', 2013, '历史', 8, NOW(), NOW()),
+(10, '9787101005219', '资治通鉴', '司马光', '中华书局', 2015, '历史', 6, NOW(), NOW());
+
+-- ========================================
+-- 4. 插入馆藏统计数据
+-- ========================================
+INSERT INTO tb_library_biblio_stats (library_id, biblio_id, available_count, total_count, created_at, updated_at) VALUES
+-- 理科馆（library_id=1）
+(1, 1, 3, 3, NOW(), NOW()),  -- Java编程思想
+(1, 2, 2, 2, NOW(), NOW()),  -- 深入理解Java虚拟机
+(1, 3, 2, 2, NOW(), NOW()),  -- 算法导论
+(1, 4, 5, 5, NOW(), NOW()),  -- 高等数学
+(1, 5, 4, 4, NOW(), NOW()),  -- 线性代数
+(1, 6, 3, 3, NOW(), NOW()),  -- 大学物理
+-- 文科馆（library_id=2）
+(2, 7, 4, 4, NOW(), NOW()),  -- 红楼梦
+(2, 8, 3, 3, NOW(), NOW()),  -- 西游记
+(2, 9, 2, 2, NOW(), NOW()),  -- 史记
+(2, 10, 2, 2, NOW(), NOW()), -- 资治通鉴
+-- 工程馆（library_id=3）
+(3, 1, 2, 2, NOW(), NOW()),  -- Java编程思想
+(3, 2, 2, 2, NOW(), NOW()),  -- 深入理解Java虚拟机
+(3, 7, 2, 2, NOW(), NOW());  -- 红楼梦
+
+-- ========================================
+-- 5. 插入图书副本数据
+-- ========================================
+INSERT INTO tb_book_copy (id, copy_barcode, biblio_id, library_id, location, status, created_at, updated_at) VALUES
+-- 理科馆副本（library_id=1）
+(1, 'RC001-001', 1, 1, 'A区-3楼-计算机', 'AVAILABLE', NOW(), NOW()),
+(2, 'RC001-002', 1, 1, 'A区-3楼-计算机', 'AVAILABLE', NOW(), NOW()),
+(3, 'RC001-003', 1, 1, 'A区-3楼-计算机', 'AVAILABLE', NOW(), NOW()),
+(4, 'RC002-001', 2, 1, 'A区-3楼-计算机', 'AVAILABLE', NOW(), NOW()),
+(5, 'RC002-002', 2, 1, 'A区-3楼-计算机', 'AVAILABLE', NOW(), NOW()),
+(6, 'RC003-001', 3, 1, 'A区-3楼-计算机', 'AVAILABLE', NOW(), NOW()),
+(7, 'RC003-002', 3, 1, 'A区-3楼-计算机', 'AVAILABLE', NOW(), NOW()),
+(8, 'RC004-001', 4, 1, 'B区-2楼-数学', 'AVAILABLE', NOW(), NOW()),
+(9, 'RC004-002', 4, 1, 'B区-2楼-数学', 'AVAILABLE', NOW(), NOW()),
+(10, 'RC004-003', 4, 1, 'B区-2楼-数学', 'AVAILABLE', NOW(), NOW()),
+(11, 'RC004-004', 4, 1, 'B区-2楼-数学', 'AVAILABLE', NOW(), NOW()),
+(12, 'RC004-005', 4, 1, 'B区-2楼-数学', 'AVAILABLE', NOW(), NOW()),
+(13, 'RC005-001', 5, 1, 'B区-2楼-数学', 'AVAILABLE', NOW(), NOW()),
+(14, 'RC005-002', 5, 1, 'B区-2楼-数学', 'AVAILABLE', NOW(), NOW()),
+(15, 'RC005-003', 5, 1, 'B区-2楼-数学', 'AVAILABLE', NOW(), NOW()),
+(16, 'RC005-004', 5, 1, 'B区-2楼-数学', 'AVAILABLE', NOW(), NOW()),
+(17, 'RC006-001', 6, 1, 'C区-2楼-物理', 'AVAILABLE', NOW(), NOW()),
+(18, 'RC006-002', 6, 1, 'C区-2楼-物理', 'AVAILABLE', NOW(), NOW()),
+(19, 'RC006-003', 6, 1, 'C区-2楼-物理', 'AVAILABLE', NOW(), NOW()),
+-- 文科馆副本（library_id=2）
+(20, 'WC007-001', 7, 2, 'D区-3楼-文学', 'AVAILABLE', NOW(), NOW()),
+(21, 'WC007-002', 7, 2, 'D区-3楼-文学', 'AVAILABLE', NOW(), NOW()),
+(22, 'WC007-003', 7, 2, 'D区-3楼-文学', 'AVAILABLE', NOW(), NOW()),
+(23, 'WC007-004', 7, 2, 'D区-3楼-文学', 'AVAILABLE', NOW(), NOW()),
+(24, 'WC008-001', 8, 2, 'D区-3楼-文学', 'AVAILABLE', NOW(), NOW()),
+(25, 'WC008-002', 8, 2, 'D区-3楼-文学', 'AVAILABLE', NOW(), NOW()),
+(26, 'WC008-003', 8, 2, 'D区-3楼-文学', 'AVAILABLE', NOW(), NOW()),
+(27, 'WC009-001', 9, 2, 'E区-2楼-历史', 'AVAILABLE', NOW(), NOW()),
+(28, 'WC009-002', 9, 2, 'E区-2楼-历史', 'AVAILABLE', NOW(), NOW()),
+(29, 'WC010-001', 10, 2, 'E区-2楼-历史', 'AVAILABLE', NOW(), NOW()),
+(30, 'WC010-002', 10, 2, 'E区-2楼-历史', 'AVAILABLE', NOW(), NOW()),
+-- 工程馆副本（library_id=3）
+(31, 'GC001-001', 1, 3, 'F区-3楼-计算机', 'AVAILABLE', NOW(), NOW()),
+(32, 'GC001-002', 1, 3, 'F区-3楼-计算机', 'AVAILABLE', NOW(), NOW()),
+(33, 'GC002-001', 2, 3, 'F区-3楼-计算机', 'AVAILABLE', NOW(), NOW()),
+(34, 'GC002-002', 2, 3, 'F区-3楼-计算机', 'AVAILABLE', NOW(), NOW()),
+(35, 'GC007-001', 7, 3, 'G区-3楼-文学', 'AVAILABLE', NOW(), NOW()),
+(36, 'GC007-002', 7, 3, 'G区-3楼-文学', 'AVAILABLE', NOW(), NOW());
+
+-- ========================================
+-- 测试场景说明
+-- ========================================
+-- 场景1：本地借阅测试
+--   用户1（zhangsan）在理科馆借阅《Java编程思想》
+--   预期结果：直接借阅成功，无需调拨
+
+-- 场景2：跨馆调拨测试
+--   用户1（zhangsan）在理科馆借阅《红楼梦》
+--   预期结果：触发跨馆调拨，从文科馆调拨到理科馆
+
+-- 场景3：预约排队测试
+--   用户1、2、3同时借阅同一本稀缺书籍（如《资治通鉴》）
+--   预期结果：第一个借阅成功，其他人进入预约队列
+
+-- 场景4：还书测试
+--   用户1归还已借阅的书籍
+--   预期结果：检查预约队列，触发调拨或预留
+
+-- 场景5：并发测试
+--   多个用户同时借阅同一本书
+--   预期结果：只有一个用户借阅成功，其他用户进入预约队列
+
+-- 场景6：冻结用户测试
+--   用户4（zhaoliu）尝试借阅书籍
+--   预期结果：借阅失败，提示用户已被冻结
+
+-- ========================================
+-- 数据统计
+-- ========================================
+-- 图书馆数量：3个（理科馆、文科馆、工程馆）
+-- 用户数量：4个（3个正常用户，1个冻结用户）
+-- 图书目录数量：10本（涵盖计算机、数学、物理、文学、历史）
+-- 图书副本数量：36本
+-- 总馆藏量：36本
+-- 可用数量：36本
+
+-- ========================================
+-- 使用说明
+-- ========================================
+-- 1. 确保数据库已创建：CREATE DATABASE library_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+-- 2. 执行此脚本：mysql -u root -p1234 library_db < test_data.sql
+-- 3. 启动应用，访问Swagger UI：http://localhost:8080/swagger-ui.html
+-- 4. 按照测试场景进行功能测试
+
+-- ========================================
+-- 重置数据库命令
+-- ========================================
+-- mysql -u root -p1234 library_db < test_data.sql

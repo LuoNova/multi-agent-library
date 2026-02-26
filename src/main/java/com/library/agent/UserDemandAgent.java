@@ -3,6 +3,8 @@ package com.library.agent;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.library.agent.dto.ContractNetMessage;
 import com.library.constant.LibraryConstants;
+import com.library.entity.BookBorrow;
+import com.library.mapper.BookBorrowMapper;
 import com.library.service.*;
 import com.library.util.AgentTaskManager;
 import com.library.util.SpringContextUtil;
@@ -18,6 +20,7 @@ import jade.lang.acl.ACLMessage;
 import jade.lang.acl.MessageTemplate;
 import lombok.extern.slf4j.Slf4j;
 
+import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -31,10 +34,11 @@ public class UserDemandAgent extends Agent {
     private ObjectMapper mapper = new ObjectMapper();
     private AgentTaskManager taskManager;
     private BookCopyService bookCopyService;
-    private BookTransferService transferService;
+    private TransferService transferService;
     private UserService userService;
     private BookBorrowService bookBorrowService;
     private BookReservationService bookReservationService; //新增：预约服务
+    private BookBorrowMapper bookBorrowMapper;
 
     @Override
     protected void setup() {
@@ -42,10 +46,11 @@ public class UserDemandAgent extends Agent {
 
         taskManager = SpringContextUtil.getBean(AgentTaskManager.class);
         bookCopyService = SpringContextUtil.getBean(BookCopyService.class);
-        transferService = SpringContextUtil.getBean(BookTransferService.class);
+        transferService = SpringContextUtil.getBean(TransferService.class);
         userService = SpringContextUtil.getBean(UserService.class);
         bookBorrowService = SpringContextUtil.getBean(BookBorrowService.class);
         bookReservationService = SpringContextUtil.getBean(BookReservationService.class); //初始化
+        bookBorrowMapper = SpringContextUtil.getBean(BookBorrowMapper.class);
 
         addBehaviour(new TaskPollingBehaviour(this, 500));
     }
@@ -80,6 +85,14 @@ public class UserDemandAgent extends Agent {
             String checkResult = userService.checkBorrowPermission(userId, biblioId);
             if (checkResult != null) {
                 completeWithError(taskId, "权限检查失败: " + checkResult);
+                return;
+            }
+
+            //步骤1.5：【新增】检查是否已存在该书的活跃借阅（防重复借书/调拨）
+            //活跃状态包括：调拨中(TRANSFERRING)、到馆待取(RESERVED)、已借走(BORROWING)
+            boolean hasActiveBorrow = bookBorrowMapper.hasActiveBorrow(userId, biblioId);
+            if (hasActiveBorrow) {
+                completeWithError(taskId, "您已借阅该书（可能在调拨中或待取），请勿重复操作");
                 return;
             }
 
@@ -206,6 +219,13 @@ public class UserDemandAgent extends Agent {
                     //场景C：全馆无库存 -> 创建预约记录
                     log.info("[{}] 所有馆均无库存，转为预约处理", taskId);
 
+                    //修改点1：添加防重检查
+                    if (bookReservationService.hasActiveReservation(userId, biblioId)) {
+                        UserDemandAgent.this.completeWithError(taskId,
+                                "您已预约该书，请勿重复预约，可在个人中心查看预约状态");
+                        return;
+                    }
+
                     Long reservationId = bookReservationService.createReservation(userId, biblioId, userLibraryId);
 
                     Map<String, Object> result = new HashMap<>();
@@ -238,43 +258,75 @@ public class UserDemandAgent extends Agent {
                 //5.发送Accept/Reject通知
                 sendAcceptance(bestProposal, selectedLibraryId);
 
-                //6.执行调拨
-                boolean transferSuccess = executeTransfer(bestProposal, selectedLibraryId);
+                //6.执行调拨（仅创建调拨单，书进入运输状态，用户暂时不能取书）
+                Long copyId = Long.valueOf(bestProposal.getProposal().get("copyId").toString());
+                Long transferId = this.executeTransferWithId(bestProposal, selectedLibraryId);
 
-                if (!transferSuccess) {
+                if (transferId == null) {
                     completeWithError("调拨执行失败");
                     return;
                 }
 
-                //7.调拨完成后，自动为用户预留24小时
-                Long copyId = Long.valueOf(bestProposal.getProposal().get("copyId").toString());
-                boolean reserveSuccess = bookBorrowService.reserveAfterTransfer(userId, copyId);
+                //7.调拨已创建，等待物流完成（此时不创建借阅记录，书还在路上）
+                Map<String, Object> result = new HashMap<>();
+                result.put("taskId", taskId);
+                result.put("status", "SUCCESS");
+                result.put("strategy", "TRANSFER_PROVIDE");
+                result.put("sourceLibraryId", selectedLibraryId);
+                result.put("targetLibraryId", userLibraryId);
+                result.put("copyId", copyId);
+                result.put("transferId", transferId);
+                result.put("estimatedArrivalMinutes", 30);
+                result.put("message", "调拨已发起，预计30分钟后到达目标馆，到达后将为您预留" +
+                        LibraryConstants.RESERVE_HOURS + "小时，请勿过早前往取书");
 
-                if (reserveSuccess) {
-                    userService.incrementBorrowCount(userId);
-
-                    Map<String, Object> result = new HashMap<>();
-                    result.put("taskId", taskId);
-                    result.put("status", "SUCCESS");
-                    result.put("strategy", "TRANSFER_PROVIDE");
-                    result.put("sourceLibraryId", selectedLibraryId);
-                    result.put("targetLibraryId", userLibraryId);
-                    result.put("copyId", copyId);
-                    result.put("reserveHours", LibraryConstants.RESERVE_HOURS);
-                    result.put("message", "调拨已完成，已为您预留" + LibraryConstants.RESERVE_HOURS + "小时，请尽快取书");
-                    //TODO: 推送通知功能（WebSocket/SMS）
-                    //TODO: 预留座位功能（Phase 2）
-
-                    String resultJson = mapper.writeValueAsString(result);
-                    taskManager.completeTask(taskId, resultJson);
-                    log.info("[{}] 调拨完成并已预留，等待用户取书", taskId);
-                } else {
-                    completeWithError("调拨完成但预留失败（副本异常）");
-                }
+                String resultJson = mapper.writeValueAsString(result);
+                taskManager.completeTask(taskId, resultJson);
+                log.info("[{}] 调拨单{}已创建，书运输中，等待定时任务完成", taskId, transferId);
 
             } catch (Exception e) {
                 log.error("[{}] 调拨协商异常", taskId, e);
                 completeWithError("系统异常: " + e.getMessage());
+            }
+        }
+
+        //执行调拨（返回调拨单ID，失败返回null）
+        //修改说明：创建调拨后立即插入Borrow记录（状态TRANSFERRING），用于防重和权属记录
+        private Long executeTransferWithId(ContractNetMessage proposal, Long fromLibraryId) {
+            try {
+                Long copyId = Long.valueOf(proposal.getProposal().get("copyId").toString());
+
+                //1.创建调拨记录（状态IN_TRANSIT）
+                Long transferId = transferService.createTransfer(copyId, fromLibraryId, userLibraryId, null);
+
+                //2.执行调拨（更新副本状态为IN_TRANSIT，库存调整）
+                boolean success = bookCopyService.executeTransfer(copyId, fromLibraryId, userLibraryId, biblioId);
+
+                if (!success) {
+                    return null;
+                }
+
+                //3.【关键】立即创建Borrow记录（状态TRANSFERRING）
+                //说明：此时书已"属于"该用户，只是还在路上，用于防重和权属追踪
+                BookBorrow borrow = new BookBorrow();
+                borrow.setCopyId(copyId);
+                borrow.setUserId(userId);
+                borrow.setBorrowTime(LocalDateTime.now());
+                borrow.setStatus(LibraryConstants.BORROW_STATUS_TRANSFERRING);
+                //修复：due_time不能为null，先设为当前时间+1天作为占位（调拨完成后会更新为24小时后的真实时间）
+                borrow.setDueTime(LocalDateTime.now().plusDays(1));
+                bookBorrowMapper.insert(borrow);
+
+                //4.增加用户借阅计数（书已算在用户名下）
+                userService.incrementBorrowCount(userId);
+
+                log.info("[{}] 调拨创建成功，ID:{}，Borrow记录ID:{}，状态TRANSFERRING，书运输中",
+                        taskId, transferId, borrow.getId());
+                return transferId;
+
+            } catch (Exception e) {
+                log.error("[{}] 调拨执行异常", taskId, e);
+                return null;
             }
         }
 
@@ -322,18 +374,22 @@ public class UserDemandAgent extends Agent {
                 }
             }
         }
-
+/*
+        此方法已经增强为了executeTransferWithId方法，弃用
         //执行调拨（完整方法）
         private boolean executeTransfer(ContractNetMessage proposal, Long fromLibraryId) {
             try {
                 Long copyId = Long.valueOf(proposal.getProposal().get("copyId").toString());
 
-                Long transferId = transferService.createTransferRecord(copyId, fromLibraryId, userLibraryId, taskId);
-
-                boolean success = bookCopyService.executeTransfer(copyId, fromLibraryId, userLibraryId, biblioId);
+                //修改点3：改为调用TransferService.createTransfer，参数去掉requestId，reservationId传null（直接调拨非预约调拨）
+                Long transferId = transferService.createTransfer(copyId, fromLibraryId,
+                        userLibraryId, null);
+                boolean success = bookCopyService.executeTransfer(copyId, fromLibraryId,
+                        userLibraryId, biblioId);
 
                 if (success) {
-                    transferService.completeTransfer(transferId);
+                    //改为使用定时任务进行调拨
+                    //transferService.completeTransfer(transferId);
                     log.info("[{}] 调拨执行成功", taskId);
                     return true;
                 }
@@ -343,6 +399,7 @@ public class UserDemandAgent extends Agent {
                 return false;
             }
         }
+*/
 
         //错误处理（完整方法）
         private void completeWithError(String errorMsg) {

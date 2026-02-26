@@ -32,8 +32,7 @@ jade:
   agents: >
     demand:com.library.agent.UserDemandAgent;
     lib1:com.library.agent.InventoryAgent(1,理科馆);
-    lib2:com.library.agent.InventoryAgent(2,文科馆);
-    lib3:com.library.agent.InventoryAgent(3,工程馆)
+    lib2:com.library.agent.InventoryAgent(2,文科馆)
 
 server:
   port: 8080

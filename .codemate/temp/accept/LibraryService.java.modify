@@ -22,14 +22,7 @@ public class LibraryService {
     //计算两馆之间的距离（简化版：实际应基于经纬度计算）
     //返回单位：公里
     public double calculateDistance(Long fromLibraryId, Long toLibraryId) {
-        // TODO [改进建议] 当前距离计算过于简化，基于ID差值计算距离不符合实际地理位置
-        // TODO [改进建议] 需要在tb_library表中添加latitude（纬度）和longitude（经度）字段
-        // TODO [改进建议] 改进方案：使用Haversine公式基于经纬度计算真实距离
-        // TODO [改进建议] 示例代码：
-        // TODO [改进建议] Library from = getById(fromLibraryId);
-        // TODO [改进建议] Library to = getById(toLibraryId);
-        // TODO [改进建议] return calculateHaversineDistance(from.getLatitude(), from.getLongitude(),
-        // TODO [改进建议]                                    to.getLatitude(), to.getLongitude());
+        // TODO 实际项目中应根据tb_library的latitude/longitude计算
         //这里模拟：理科馆(1)到文科馆(2)距离0.8公里
         if (fromLibraryId.equals(toLibraryId)) {
             return 0.0;
