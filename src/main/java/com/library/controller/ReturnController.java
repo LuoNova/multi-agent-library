@@ -12,6 +12,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
 //还书接口控制器
+//修改说明：修正手动拼接JSON的不规范做法，直接返回ReturnResult对象由Spring自动序列化
 @Slf4j
 @RestController
 @RequestMapping("/api/book")
@@ -23,35 +24,22 @@ public class ReturnController {
 
     @PostMapping("/return")
     @Operation(summary = "归还图书", description = "用户归还图书，系统自动检查预约队列并触发调拨或预留")
-    public String returnBook(
+    //修改点1：返回类型从String改为ReturnResult，Spring Boot自动转为JSON
+    public ReturnResult returnBook(
             @Parameter(description = "还书请求参数", required = true)
             @RequestBody ReturnRequest request) {
 
         log.info("收到还书请求：副本{}，用户{}，还书馆{}",
                 request.getCopyId(), request.getUserId(), request.getReturnLibraryId());
 
-        ReturnResult result = bookReturnService.processReturn(
+        //调用Service层处理还书逻辑
+        //修改点2：删除所有手动String.format拼接JSON的代码，直接返回对象
+        //Spring Boot使用Jackson自动将ReturnResult序列化为JSON
+        return bookReturnService.processReturn(
                 request.getCopyId(),
                 request.getUserId(),
                 request.getReturnLibraryId()
         );
-
-        if (result.isSuccess()) {
-            if (result.isHasReservation()) {
-                //有预约处理的情况
-                return String.format(
-                        "{\"status\":\"SUCCESS\",\"message\":\"%s\",\"reservatorId\":%d,\"localReservation\":%b}",
-                        result.getMessage(),
-                        result.getReservatorId(),
-                        result.isLocalReservation()
-                );
-            } else {
-                //普通还书
-                return String.format("{\"status\":\"SUCCESS\",\"message\":\"%s\"}", result.getMessage());
-            }
-        } else {
-            return String.format("{\"status\":\"FAILED\",\"message\":\"%s\"}", result.getMessage());
-        }
     }
 
     @Schema(description = "还书请求参数")

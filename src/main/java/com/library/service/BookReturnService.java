@@ -3,6 +3,7 @@ package com.library.service;
 import com.library.constant.LibraryConstants;
 import com.library.entity.*;
 import com.library.mapper.*;
+import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -94,8 +95,6 @@ public class BookReturnService {
         log.info("基础还书完成，副本{}已释放至馆{}", copyId, returnLibraryId);
 
         //3.循环处理预约队列（关键修复：递归查找有效预约者）
-        BookReservation fulfilledReservation = null;
-        User fulfilledUser = null;
         boolean isLocal = false;
 
         while (true) {
@@ -128,32 +127,21 @@ public class BookReturnService {
             }
 
             //找到有效预约者，执行兑现逻辑
-            fulfilledUser = reservator;
-            fulfilledReservation = reservation;
             isLocal = reservation.getPickupLibraryId().equals(returnLibraryId);
 
             if (isLocal) {
-                //场景B：就地预留
-                processLocalReservation(copy, reservation, reservatorId, returnLibraryId);
+                //场景B：就地预留，直接返回结果
+                return processLocalReservation(copy, reservation, reservatorId, returnLibraryId);
             } else {
-                //场景C：跨馆调拨
-                processTransferReservation(copy, reservation, reservatorId, returnLibraryId,
+                //场景C：跨馆调拨，直接返回结果
+                return processTransferReservation(copy, reservation, reservatorId, returnLibraryId,
                         reservation.getPickupLibraryId());
             }
-            break; //成功处理一个预约后退出循环（一本书只能满足一个预约）
+            //注意：break已不需要，因为return直接结束方法
         }
 
-        //根据是否处理预约返回不同结果
-        if (fulfilledReservation == null) {
-            //场景A：无预约等待
-            return ReturnResult.success("还书成功，书已回到馆" + returnLibraryId + "架上");
-        } else {
-            //场景B或C：已处理预约
-            String msg = isLocal
-                    ? "还书成功，书已直接预留给预约用户（" + RESERVE_HOURS + "小时内有效）"
-                    : "还书成功，已触发向预约用户指定馆的调拨（预计30分钟到达）";
-            return ReturnResult.successWithReservation(msg, fulfilledUser.getId(), isLocal);
-        }
+        //场景A：无预约等待（只有while循环正常结束未return时才会执行到这里）
+        return ReturnResult.success("还书成功，书已回到馆" + returnLibraryId + "架上");
     }
 
     //验证还书时是否逾期
@@ -217,8 +205,14 @@ public class BookReturnService {
 
         log.info("就地预留完成，用户{}需在" + RESERVE_HOURS + "小时内取书", reservatorId);
 
-        return ReturnResult.successWithReservation("还书成功，书已直接预留给预约用户（" + RESERVE_HOURS + "小时内有效）",
-                reservatorId, true); //true表示就地
+        //修改为增强版构造方法，添加reservationId和过期时间
+        return ReturnResult.successWithReservation(
+                "还书成功，书已直接预留给预约用户（" + RESERVE_HOURS + "小时内有效）",
+                reservatorId,
+                true,
+                reservation.getId(),
+                LocalDateTime.now().plusHours(RESERVE_HOURS)
+        );
     }
 
     //处理跨馆调拨（预约者在其他馆）
@@ -270,62 +264,77 @@ public class BookReturnService {
         log.info("跨馆调拨预约兑现完成，调拨单ID：{}，预计30分钟到达馆{}",
                 transfer.getId(), toLibraryId);
 
-        return ReturnResult.successWithReservation("还书成功，已触发向预约用户指定馆的调拨（预计30分钟到达）",
-                reservatorId, false); //false表示跨馆
+        //修改为增强版构造方法，添加reservationId、transferId和过期时间
+        return ReturnResult.successWithTransfer(
+                "还书成功，已触发向预约用户指定馆的调拨（预计30分钟到达）",
+                reservatorId,
+                reservation.getId(),
+                transfer.getId(),
+                LocalDateTime.now().plusHours(RESERVE_HOURS)
+        );
     }
 
-    //还书结果内部类
+    //还书结果内部类（增强版）
+    @Data
     public static class ReturnResult {
         private boolean success;
+        private String status; //SUCCESS/FAILED
         private String message;
-        private boolean hasReservation; //是否有预约处理
-        private Long reservatorId; //预约者ID（如果有）
-        private boolean localReservation; //是否就地预留（true）还是跨馆调拨（false）
+        private boolean hasReservation;
+        private Long reservatorId;
+        private boolean localReservation;
+        private Long reservationId; //新增：预约记录ID
+        private LocalDateTime reserveExpireTime; //新增：预留过期时间（24小时后）
+        private Long transferId; //新增：调拨单ID（仅跨馆时有）
 
         public static ReturnResult success(String msg) {
             ReturnResult r = new ReturnResult();
             r.success = true;
+            r.status = "SUCCESS";
             r.message = msg;
             r.hasReservation = false;
             return r;
         }
 
-        public static ReturnResult successWithReservation(String msg, Long reservatorId, boolean local) {
+        //就地预留专用构造（增强参数）
+        public static ReturnResult successWithReservation(String msg, Long reservatorId,
+                                                          boolean local, Long reservationId,
+                                                          LocalDateTime expireTime) {
             ReturnResult r = new ReturnResult();
             r.success = true;
+            r.status = "SUCCESS";
             r.message = msg;
             r.hasReservation = true;
             r.reservatorId = reservatorId;
             r.localReservation = local;
+            r.reservationId = reservationId;
+            r.reserveExpireTime = expireTime;
+            return r;
+        }
+
+        //跨馆调拨专用构造（增强参数）
+        public static ReturnResult successWithTransfer(String msg, Long reservatorId,
+                                                       Long reservationId, Long transferId,
+                                                       LocalDateTime expireTime) {
+            ReturnResult r = new ReturnResult();
+            r.success = true;
+            r.status = "SUCCESS";
+            r.message = msg;
+            r.hasReservation = true;
+            r.reservatorId = reservatorId;
+            r.localReservation = false;
+            r.reservationId = reservationId;
+            r.transferId = transferId;
+            r.reserveExpireTime = expireTime;
             return r;
         }
 
         public static ReturnResult fail(String msg) {
             ReturnResult r = new ReturnResult();
             r.success = false;
+            r.status = "FAILED";
             r.message = msg;
             return r;
-        }
-
-        //Getters...
-        public boolean isSuccess() {
-            return success;
-        }
-
-        public String getMessage() {
-            return message;
-        }
-
-        public boolean isHasReservation() {
-            return hasReservation;
-        }
-
-        public Long getReservatorId() {
-            return reservatorId;
-        }
-
-        public boolean isLocalReservation() {
-            return localReservation;
         }
     }
 }
