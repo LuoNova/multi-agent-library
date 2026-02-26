@@ -35,4 +35,9 @@ public class LibraryConstants {
     public static final int RESERVE_HOURS = 24;        //调拨后预留24小时
     public static final int BORROW_DAYS = 30;          //默认借阅期限30天
     public static final int RESERVATION_EXPIRE_DAYS = 3; //预约有效期3天
+
+    //信用扣分规则
+    public static final int BORROW_DAILY_DEDUCTION = 2;  //借书每逾期1天扣2分
+    public static final int BORROW_CEILING_DEDUCTION = 20; //借书逾期上限扣20分
+
 }

@@ -11,7 +11,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.List;
 
-import static com.library.constant.LibraryConstants.RESERVE_HOURS;
+import static com.library.constant.LibraryConstants.*;
 
 //还书服务（包含基础还书+预约自动兑现）
 @Slf4j
@@ -88,42 +88,93 @@ public class BookReturnService {
             statsMapper.updateById(stats);
         }
 
+        //2.5信用分计算（新增：逾期扣分逻辑）
+        checkCredit(userId, currentBorrow, returnUser);
+
         log.info("基础还书完成，副本{}已释放至馆{}", copyId, returnLibraryId);
 
-        //3. 检查是否有等待的预约（关键：自动兑现逻辑）
-        BookReservation reservation = bookReservationMapper.selectFirstPendingByBiblio(biblioId);
+        //3.循环处理预约队列（关键修复：递归查找有效预约者）
+        BookReservation fulfilledReservation = null;
+        User fulfilledUser = null;
+        boolean isLocal = false;
 
-        if (reservation == null) {
-            //场景A：无预约等待，直接完成
+        while (true) {
+            //获取当前第一个待处理预约
+            BookReservation reservation = bookReservationMapper.selectFirstPendingByBiblio(biblioId);
+            if (reservation == null) {
+                //无预约，退出循环
+                break;
+            }
+
+            Long reservatorId = reservation.getUserId();
+            User reservator = userMapper.selectById(reservatorId);
+
+            //检查预约者是否具备借书资格
+            boolean canBorrow = reservator != null
+                    && reservator.getCurrentBorrowCount() < reservator.getMaxBorrowCount()
+                    && !"FROZEN".equals(reservator.getStatus());
+
+            if (!canBorrow) {
+                //当前预约者无效，取消并继续查找下一个
+                reservation.setStatus(LibraryConstants.RESERVATION_STATUS_CANCELED);
+                bookReservationMapper.updateById(reservation);
+
+                log.warn("预约者{}无法借书（当前借阅{}/{}或状态{}），自动取消并查找下一个",
+                        reservatorId,
+                        reservator != null ? reservator.getCurrentBorrowCount() : "N/A",
+                        reservator != null ? reservator.getMaxBorrowCount() : "N/A",
+                        reservator != null ? reservator.getStatus() : "NULL");
+                continue; //关键：继续while循环查找下一个预约者
+            }
+
+            //找到有效预约者，执行兑现逻辑
+            fulfilledUser = reservator;
+            fulfilledReservation = reservation;
+            isLocal = reservation.getPickupLibraryId().equals(returnLibraryId);
+
+            if (isLocal) {
+                //场景B：就地预留
+                processLocalReservation(copy, reservation, reservatorId, returnLibraryId);
+            } else {
+                //场景C：跨馆调拨
+                processTransferReservation(copy, reservation, reservatorId, returnLibraryId,
+                        reservation.getPickupLibraryId());
+            }
+            break; //成功处理一个预约后退出循环（一本书只能满足一个预约）
+        }
+
+        //根据是否处理预约返回不同结果
+        if (fulfilledReservation == null) {
+            //场景A：无预约等待
             return ReturnResult.success("还书成功，书已回到馆" + returnLibraryId + "架上");
-        }
-
-        //有预约，需要自动兑现
-        Long reservatorId = reservation.getUserId(); //预约者
-        Long pickupLibraryId = reservation.getPickupLibraryId(); //预约者期望取书馆
-
-        log.info("检测到预约记录：预约者{}，期望取书馆{}", reservatorId, pickupLibraryId);
-
-        //检查预约者当前借阅权限（简单检查，防止超借）
-        User reservator = userMapper.selectById(reservatorId);
-        if (reservator == null ||
-                reservator.getCurrentBorrowCount() >= reservator.getMaxBorrowCount()) {
-            //预约者已无法借书（可能达到上限），跳过此预约，查找下一个（递归或循环）
-            //简化处理：标记此预约为CANCELED，继续检查下一个
-            reservation.setStatus(LibraryConstants.RESERVATION_STATUS_CANCELED);
-            bookReservationMapper.updateById(reservation);
-            log.warn("预约者{}已达到借阅上限，取消此预约", reservatorId);
-            //实际应该递归查找下一个预约，这里简化处理
-            return ReturnResult.success("还书成功，但预约者已达借阅上限，书已回到架上");
-        }
-
-        //分支判断：就地预留 vs 跨馆调拨
-        if (pickupLibraryId.equals(returnLibraryId)) {
-            //场景B：就地预留（预约者在同一馆还书）
-            return processLocalReservation(copy, reservation, reservatorId, returnLibraryId);
         } else {
-            //场景C：跨馆调拨（预约者在其他馆）
-            return processTransferReservation(copy, reservation, reservatorId, returnLibraryId, pickupLibraryId);
+            //场景B或C：已处理预约
+            String msg = isLocal
+                    ? "还书成功，书已直接预留给预约用户（" + RESERVE_HOURS + "小时内有效）"
+                    : "还书成功，已触发向预约用户指定馆的调拨（预计30分钟到达）";
+            return ReturnResult.successWithReservation(msg, fulfilledUser.getId(), isLocal);
+        }
+    }
+
+    //验证还书时是否逾期
+    private void checkCredit(Long userId, BookBorrow currentBorrow, User returnUser) {
+        LocalDateTime dueTime = currentBorrow.getDueTime();
+        if (dueTime.isBefore(LocalDateTime.now())) {
+            long daysOverdue = java.time.Duration.between(dueTime, LocalDateTime.now()).toDays();
+            int penalty = (int) Math.min(daysOverdue * BORROW_DAILY_DEDUCTION,
+                    BORROW_CEILING_DEDUCTION);
+
+            returnUser.setCreditScore(Math.max(0, returnUser.getCreditScore() - penalty));
+            userMapper.updateById(returnUser);
+
+            log.info("用户{}逾期{}天，信用分扣除{}，当前信用分{}", userId, daysOverdue, penalty, returnUser.getCreditScore());
+
+            //如果信用分过低，冻结账号
+            if (returnUser.getCreditScore() < 60 && !"FROZEN".equals(returnUser.getStatus())) {
+                returnUser.setStatus("FROZEN");
+                userMapper.updateById(returnUser);
+                log.warn("用户{}信用分过低，账号已冻结", userId);
+            }
         }
     }
 
