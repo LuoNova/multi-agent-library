@@ -1,5 +1,6 @@
 package com.library.service;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.library.constant.LibraryConstants;
 import com.library.entity.BookReservation;
 import com.library.mapper.BookReservationMapper;
@@ -7,6 +8,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.util.Arrays;
 
 //图书预约服务（处理无库存时的预约排队）
 @Service
@@ -32,15 +34,15 @@ public class BookReservationService {
         return reservation.getId();
     }
 
-    //检查用户是否已有该书的有效预约（防止重复预约）
+    //检查用户是否已存在该书的有效预约（PENDING待到货 或 FULFILLED已到馆待取）
+    //返回true表示已存在，禁止重复预约
     public boolean hasActiveReservation(Long userId, Long biblioId) {
-        //查询该用户该书目的PENDING或FULFILLED但未过期的预约
-        //简化实现：假设Mapper有对应方法，这里直接返回false或实现逻辑
-        //实际应该查询数据库：
-        //SELECT COUNT(*) FROM tb_book_reservation
-        //WHERE user_id = #{userId} AND biblio_id = #{biblioId}
-        //AND status IN ('PENDING', 'FULFILLED')
-        //AND expire_time > NOW()
-        return false; //暂时简化，实际应查询数据库
+        LambdaQueryWrapper<BookReservation> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(BookReservation::getUserId, userId)
+                .eq(BookReservation::getBiblioId, biblioId)
+                .in(BookReservation::getStatus,
+                        Arrays.asList(LibraryConstants.RESERVATION_STATUS_PENDING,
+                                LibraryConstants.RESERVATION_STATUS_FULFILLED));
+        return reservationMapper.selectCount(wrapper) > 0;
     }
 }

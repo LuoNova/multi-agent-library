@@ -31,4 +31,10 @@ public interface BookReservationMapper extends BaseMapper<BookReservation> {
     @Select("SELECT COUNT(*) FROM tb_book_reservation " +
             "WHERE user_id = #{userId} AND status = 'PENDING'")
     int countPendingByUser(@Param("userId") Long userId);
+
+    //根据副本ID和状态查询预约记录（用于调拨回调时查找关联预约）
+    @Select("SELECT * FROM tb_book_reservation " +
+            "WHERE copy_id = #{copyId} AND status = #{status} LIMIT 1")
+    BookReservation selectByCopyIdAndStatus(@Param("copyId") Long copyId,
+                                            @Param("status") String status);
 }
