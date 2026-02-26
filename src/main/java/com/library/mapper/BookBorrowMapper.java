@@ -17,4 +17,10 @@ public interface BookBorrowMapper extends BaseMapper<BookBorrow> {
             "AND bb.status IN ('BORROWING', 'RESERVED')")
     int countUnreturnedByUserAndBiblio(@Param("userId") Long userId,
                                        @Param("biblioId") Long biblioId);
+
+    //查询副本当前的未归还借阅记录（用于还书时校验）
+    @Select("SELECT * FROM tb_book_borrow " +
+            "WHERE copy_id = #{copyId} AND status = 'BORROWING' " +
+            "ORDER BY id DESC LIMIT 1")
+    BookBorrow selectCurrentBorrowByCopyId(@Param("copyId") Long copyId);
 }

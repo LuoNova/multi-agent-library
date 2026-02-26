@@ -1,9 +1,11 @@
 package com.library.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
+
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
@@ -25,6 +27,7 @@ public class LibraryBiblioStats {
     private Integer stockCount;
 
     //近30天借出次数
+    @TableField("borrow_count_30d")
     private Integer borrowCount30d;
 
     //当前排队预约人数

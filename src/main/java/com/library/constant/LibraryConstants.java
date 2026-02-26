@@ -11,7 +11,7 @@ public class LibraryConstants {
     //图书副本状态
     public static final String COPY_STATUS_AVAILABLE = "AVAILABLE";
     public static final String COPY_STATUS_BORROWED = "BORROWED";
-    public static final String COPY_STATUS_IN_TRANSIT = "IN_TRANSIT";
+    //public static final String COPY_STATUS_IN_TRANSIT = "IN_TRANSIT";
     public static final String COPY_STATUS_RESERVED = "RESERVED";      //新增：预留状态（调拨后等待用户取书）
     public static final String COPY_STATUS_LOST = "LOST";
 
