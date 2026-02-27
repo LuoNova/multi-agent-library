@@ -1,6 +1,9 @@
 package com.library.controller;
 
 import com.library.agent.dto.TaskResultHolder;
+import com.library.common.Result;
+import com.alibaba.fastjson.JSON;
+import com.library.dto.BorrowResult;
 import com.library.util.AgentTaskManager;
 
 import io.swagger.v3.oas.annotations.Operation;
@@ -25,7 +28,7 @@ public class BorrowController {
 
     @PostMapping("/request")
     @Operation(summary = "发起借书请求", description = "用户发起借书，系统自动判断本地/跨馆调拨")
-    public String borrowRequest(
+    public Result<BorrowResult> borrowRequest(
             @Parameter(description = "借书请求参数", required = true)
             @RequestBody BorrowRequest request) {
         try {
@@ -41,14 +44,22 @@ public class BorrowController {
             boolean completed = holder.await(5, TimeUnit.SECONDS);
 
             if (completed) {
-                return holder.getResultJson();
+                // 解析JSON字符串为对象
+                BorrowResult borrowResult = JSON.parseObject(holder.getResultJson(), BorrowResult.class);
+                
+                // 根据status判断成功或失败
+                if ("SUCCESS".equals(borrowResult.getStatus())) {
+                    return Result.success(borrowResult.getMessage(), borrowResult);
+                } else {
+                    return Result.fail(borrowResult.getMessage());
+                }
             } else {
-                return "{\"taskId\":\"" + taskId + "\",\"status\":\"TIMEOUT\",\"message\":\"处理超时\"}";
+                return Result.fail("处理超时,任务ID: " + taskId);
             }
 
         } catch (Exception e) {
             log.error("提交借书请求失败", e);
-            return "{\"status\":\"ERROR\",\"message\":\"" + e.getMessage() + "\"}";
+            return Result.fail("提交借书请求失败: " + e.getMessage());
         }
     }
 

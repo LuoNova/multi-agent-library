@@ -1,5 +1,6 @@
 package com.library.controller;
 
+import com.library.common.Result;
 import com.library.service.TransferService;
 import com.library.service.TransferService.TransferCompleteResult;
 import io.swagger.v3.oas.annotations.Operation;
@@ -26,17 +27,23 @@ public class TransferController {
 
     @PostMapping("/complete")
     @Operation(summary = "调拨完成回调", description = "物流系统或馆员确认图书已到达目标馆，完成调拨闭环")
-    public TransferCompleteResult completeTransfer(
+    public Result<TransferCompleteResult> completeTransfer(
             @Parameter(description = "调拨完成请求", required = true)
             @RequestBody TransferCompleteRequest request) {
 
         log.info("收到调拨完成请求：transferId={}, 到达时间={}",
                 request.getTransferId(), request.getActualArriveTime());
 
-        return transferService.completeTransfer(
+        TransferCompleteResult result = transferService.completeTransfer(
                 request.getTransferId(),
                 request.getActualArriveTime()
         );
+        
+        if (result.isSuccess()) {
+            return Result.success(result.getMessage(), result);
+        } else {
+            return Result.fail(result.getMessage());
+        }
     }
 
     //调拨完成请求参数

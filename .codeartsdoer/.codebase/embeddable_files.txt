@@ -11,9 +11,9 @@ src/main/java/com/library/agent/dto/ContractNetMessage.java
 src/main/java/com/library/mapper/NotificationTemplateMapper.java
 src/main/java/com/library/entity/Library.java
 src/main/java/com/library/dto/NotificationMessage.java
-src/main/java/com/library/controller/TransferController.java
 src/main/java/com/library/entity/RepairTicket.java
 src/main/java/com/library/mapper/EquipmentMapper.java
+src/main/java/com/library/controller/TransferController.java
 src/main/java/com/library/entity/BookTransfer.java
 src/main/java/com/library/config/OpenApiConfig.java
 src/main/java/com/library/mapper/SeatReservationMapper.java
@@ -53,9 +53,8 @@ src/main/java/com/library/mapper/BookReservationMapper.java
 src/main/java/com/library/service/BookBorrowService.java
 src/main/java/com/library/config/RabbitMQConfig.java
 src/main/java/com/library/consumer/NotificationConsumer.java
-src/main/java/com/library/service/TransferService.java
-src/main/java/com/library/controller/ReturnController.java
 src/main/java/com/library/mapper/SeatMapper.java
+src/main/java/com/library/controller/ReturnController.java
 src/main/java/com/library/dto/PickupConfirmResponse.java
 src/main/java/com/library/mapper/LibraryMapper.java
 src/main/java/com/library/service/BookReservationService.java
@@ -66,6 +65,7 @@ src/main/java/com/library/service/NotificationService.java
 src/main/java/com/library/entity/BookBiblio.java
 src/main/java/com/library/MultiAgentLibraryApplication.java
 src/main/java/com/library/util/BookStateManager.java
+src/main/java/com/library/dto/BorrowResult.java
 src/main/java/com/library/mapper/UserMapper.java
 src/main/java/com/library/entity/SeatArea.java
 src/main/java/com/library/controller/BorrowController.java
