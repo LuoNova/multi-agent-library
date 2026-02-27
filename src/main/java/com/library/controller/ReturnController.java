@@ -45,7 +45,7 @@ public class ReturnController {
     @Schema(description = "还书请求参数")
     @Data
     public static class ReturnRequest {
-        @Schema(description = "图书副本ID（条码号）", example = "1001", required = true)
+        @Schema(description = "图书副本ID（条码号）", example = "1", required = true)
         private Long copyId;
 
         @Schema(description = "还书人用户ID", example = "2", required = true)

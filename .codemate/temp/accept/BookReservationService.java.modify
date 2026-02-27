@@ -18,13 +18,7 @@ public class BookReservationService {
     private BookReservationMapper reservationMapper;
 
     //创建预约记录（当全馆无库存时调用）
-    //修改点：在方法内部添加查重检查，形成双重保护
     public Long createReservation(Long userId, Long biblioId, Long pickupLibraryId) {
-        //查重检查：防止重复预约同一本书
-        if (hasActiveReservation(userId, biblioId)) {
-            throw new IllegalStateException("您已预约该书，请勿重复预约");
-        }
-
         BookReservation reservation = new BookReservation();
         reservation.setBiblioId(biblioId);
         reservation.setUserId(userId);

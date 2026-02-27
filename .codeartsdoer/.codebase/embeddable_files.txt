@@ -33,11 +33,10 @@ src/main/java/com/library/controller/TestController.java
 src/test/java/com/library/MultiAgentLibraryApplicationTests.java
 src/main/java/com/library/mapper/BookReservationMapper.java
 src/main/java/com/library/service/BookBorrowService.java
-src/main/java/com/library/service/TransferService.java
 src/main/java/com/library/controller/ReturnController.java
 src/main/java/com/library/mapper/SeatMapper.java
-src/main/java/com/library/service/BookReservationService.java
 src/main/java/com/library/mapper/LibraryMapper.java
+src/main/java/com/library/service/BookReservationService.java
 src/main/java/com/library/config/JadeConfig.java
 src/main/java/com/library/mapper/RepairTicketMapper.java
 src/main/java/com/library/entity/User.java
