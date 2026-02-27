@@ -157,7 +157,9 @@ public class TransferService {
         if (isBorrowTransfer) {
             //借书调拨：更新已有Borrow记录（TRANSFERRING -> RESERVED）
             existingBorrow.setStatus(LibraryConstants.BORROW_STATUS_RESERVED);
-            existingBorrow.setDueTime(expireTime); //正式启动24小时倒计时
+            existingBorrow.setReservedTime(LocalDateTime.now()); // 预留开始时间
+            existingBorrow.setPickupDeadline(expireTime); // 取书截止时间
+            existingBorrow.setPickupLibraryId(transfer.getToLibraryId()); // 取书馆ID
             bookBorrowMapper.updateById(existingBorrow);
             borrowId = existingBorrow.getId();
             log.info("更新Borrow记录{}为RESERVED状态，24小时倒计时开始", borrowId);
@@ -169,7 +171,9 @@ public class TransferService {
             newBorrow.setCopyId(copy.getId());
             newBorrow.setUserId(reservatorId);
             newBorrow.setBorrowTime(LocalDateTime.now());
-            newBorrow.setDueTime(expireTime);
+            newBorrow.setReservedTime(LocalDateTime.now()); // 预留开始时间
+            newBorrow.setPickupDeadline(expireTime); // 取书截止时间
+            newBorrow.setPickupLibraryId(transfer.getToLibraryId()); // 取书馆ID
             newBorrow.setStatus(LibraryConstants.BORROW_STATUS_RESERVED);
             bookBorrowMapper.insert(newBorrow);
             borrowId = newBorrow.getId();
