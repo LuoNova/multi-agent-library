@@ -1,0 +1,233 @@
+package com.library.service;
+
+import com.library.constant.LibraryConstants;
+import com.library.entity.*;
+import com.library.mapper.*;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+
+import java.time.LocalDateTime;
+import java.util.Collections;
+
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.*;
+
+//还书服务单元测试
+@ExtendWith(MockitoExtension.class)
+class BookReturnServiceTest {
+
+    @Mock
+    private BookBorrowMapper bookBorrowMapper;
+
+    @Mock
+    private BookCopyMapper copyMapper;
+
+    @Mock
+    private UserMapper userMapper;
+
+    @Mock
+    private BookReservationMapper reservationMapper;
+
+    @Mock
+    private BookTransferMapper transferMapper;
+
+    @Mock
+    private LibraryBiblioStatsMapper statsMapper;
+
+    @Mock
+    private BookBiblioMapper biblioMapper;
+
+    @Mock
+    private LibraryMapper libraryMapper;
+
+    @Mock
+    private TransferService transferService;
+
+    @Mock
+    private NotificationService notificationService;
+
+    @InjectMocks
+    private BookReturnService bookReturnService;
+
+    private User testUser;
+    private BookCopy testCopy;
+    private BookBiblio testBiblio;
+    private BookBorrow testBorrow;
+    private Library testLibrary;
+
+    @BeforeEach
+    void setUp() {
+        //初始化测试数据
+        testUser = new User();
+        testUser.setId(1L);
+        testUser.setName("张三");
+        testUser.setMaxBorrowCount(10);
+        testUser.setCurrentBorrowCount(1);
+        testUser.setCreditScore(100);
+        testUser.setStatus("ACTIVE");
+
+        testBiblio = new BookBiblio();
+        testBiblio.setId(1L);
+        testBiblio.setTitle("Java编程思想");
+        testBiblio.setIsbn("9787111213826");
+
+        testCopy = new BookCopy();
+        testCopy.setId(1L);
+        testCopy.setBiblioId(1L);
+        testCopy.setLibraryId(1L);
+        testCopy.setStatus(LibraryConstants.COPY_STATUS_BORROWED);
+        testCopy.setLocation("A区-3楼-计算机");
+
+        testBorrow = new BookBorrow();
+        testBorrow.setId(1L);
+        testBorrow.setUserId(1L);
+        testBorrow.setCopyId(1L);
+        testBorrow.setStatus(LibraryConstants.BORROW_STATUS_BORROWING);
+        testBorrow.setBorrowTime(LocalDateTime.now().minusDays(5));
+        testBorrow.setDueTime(LocalDateTime.now().plusDays(25));
+
+        testLibrary = new Library();
+        testLibrary.setId(1L);
+        testLibrary.setName("理科馆");
+    }
+
+    @Test
+    @DisplayName("测试还书-成功且无预约")
+    void testReturnBook_SuccessWithoutReservation() {
+        //Given: 借阅记录存在，无预约
+        when(bookBorrowMapper.selectById(1L)).thenReturn(testBorrow);
+        when(copyMapper.selectById(1L)).thenReturn(testCopy);
+        when(userMapper.selectById(1L)).thenReturn(testUser);
+        when(biblioMapper.selectById(1L)).thenReturn(testBiblio);
+        when(reservationMapper.selectList(any())).thenReturn(Collections.emptyList());
+        when(bookBorrowMapper.updateById(any(BookBorrow.class))).thenReturn(1);
+        when(copyMapper.updateById(any(BookCopy.class))).thenReturn(1);
+        when(userMapper.updateById(any(User.class))).thenReturn(1);
+        when(statsMapper.selectByLibraryAndBiblio(1L, 1L)).thenReturn(createTestStats());
+
+        //When: 还书
+        BookReturnService.ReturnResult result = bookReturnService.returnBook(1L, 1L);
+
+        //Then: 应该成功
+        assertTrue(result.isSuccess());
+        assertEquals("SUCCESS", result.getStatus());
+        assertFalse(result.isHasReservation());
+        verify(bookBorrowMapper, times(1)).updateById(any(BookBorrow.class));
+        verify(copyMapper, times(1)).updateById(any(BookCopy.class));
+        verify(userMapper, times(1)).updateById(any(User.class));
+    }
+
+    @Test
+    @DisplayName("测试还书-借阅记录不存在")
+    void testReturnBook_BorrowNotFound() {
+        //Given: 借阅记录不存在
+        when(bookBorrowMapper.selectById(1L)).thenReturn(null);
+
+        //When: 还书
+        BookReturnService.ReturnResult result = bookReturnService.returnBook(1L, 1L);
+
+        //Then: 应该失败
+        assertFalse(result.isSuccess());
+        assertEquals("FAILED", result.getStatus());
+        verify(bookBorrowMapper, never()).updateById(any(BookBorrow.class));
+    }
+
+    @Test
+    @DisplayName("测试还书-副本不存在")
+    void testReturnBook_CopyNotFound() {
+        //Given: 借阅记录存在，但副本不存在
+        when(bookBorrowMapper.selectById(1L)).thenReturn(testBorrow);
+        when(copyMapper.selectById(1L)).thenReturn(null);
+
+        //When: 还书
+        BookReturnService.ReturnResult result = bookReturnService.returnBook(1L, 1L);
+
+        //Then: 应该失败
+        assertFalse(result.isSuccess());
+        assertEquals("FAILED", result.getStatus());
+    }
+
+    @Test
+    @DisplayName("测试还书-用户不存在")
+    void testReturnBook_UserNotFound() {
+        //Given: 借阅记录和副本存在，但用户不存在
+        when(bookBorrowMapper.selectById(1L)).thenReturn(testBorrow);
+        when(copyMapper.selectById(1L)).thenReturn(testCopy);
+        when(userMapper.selectById(1L)).thenReturn(null);
+
+        //When: 还书
+        BookReturnService.ReturnResult result = bookReturnService.returnBook(1L, 1L);
+
+        //Then: 应该失败
+        assertFalse(result.isSuccess());
+        assertEquals("FAILED", result.getStatus());
+    }
+
+    @Test
+    @DisplayName("测试还书-逾期扣分")
+    void testReturnBook_OverdueDeduction() {
+        //Given: 借阅已逾期5天
+        testBorrow.setDueTime(LocalDateTime.now().minusDays(5));
+        when(bookBorrowMapper.selectById(1L)).thenReturn(testBorrow);
+        when(copyMapper.selectById(1L)).thenReturn(testCopy);
+        when(userMapper.selectById(1L)).thenReturn(testUser);
+        when(biblioMapper.selectById(1L)).thenReturn(testBiblio);
+        when(reservationMapper.selectList(any())).thenReturn(Collections.emptyList());
+        when(bookBorrowMapper.updateById(any(BookBorrow.class))).thenReturn(1);
+        when(copyMapper.updateById(any(BookCopy.class))).thenReturn(1);
+        when(userMapper.updateById(any(User.class))).thenReturn(1);
+        when(statsMapper.selectByLibraryAndBiblio(1L, 1L)).thenReturn(createTestStats());
+
+        //When: 还书
+        BookReturnService.ReturnResult result = bookReturnService.returnBook(1L, 1L);
+
+        //Then: 应该成功，但信用分被扣除
+        assertTrue(result.isSuccess());
+        verify(userMapper, times(1)).updateById(any(User.class));
+        //验证信用分被扣除（5天 * 2分 = 10分）
+        assertEquals(90, testUser.getCreditScore());
+    }
+
+    @Test
+    @DisplayName("测试还书-逾期扣分上限")
+    void testReturnBook_OverdueDeductionCeiling() {
+        //Given: 借阅已逾期15天（超过上限）
+        testBorrow.setDueTime(LocalDateTime.now().minusDays(15));
+        when(bookBorrowMapper.selectById(1L)).thenReturn(testBorrow);
+        when(copyMapper.selectById(1L)).thenReturn(testCopy);
+        when(userMapper.selectById(1L)).thenReturn(testUser);
+        when(biblioMapper.selectById(1L)).thenReturn(testBiblio);
+        when(reservationMapper.selectList(any())).thenReturn(Collections.emptyList());
+        when(bookBorrowMapper.updateById(any(BookBorrow.class))).thenReturn(1);
+        when(copyMapper.updateById(any(BookCopy.class))).thenReturn(1);
+        when(userMapper.updateById(any(User.class))).thenReturn(1);
+        when(statsMapper.selectByLibraryAndBiblio(1L, 1L)).thenReturn(createTestStats());
+
+        //When: 还书
+        BookReturnService.ReturnResult result = bookReturnService.returnBook(1L, 1L);
+
+        //Then: 应该成功，但信用分被扣除上限（20分）
+        assertTrue(result.isSuccess());
+        //验证信用分被扣除上限
+        assertEquals(80, testUser.getCreditScore());
+    }
+
+    //辅助方法：创建测试用的统计数据
+    private LibraryBiblioStats createTestStats() {
+        LibraryBiblioStats stats = new LibraryBiblioStats();
+        stats.setId(1L);
+        stats.setLibraryId(1L);
+        stats.setBiblioId(1L);
+        stats.setStockCount(0);
+        stats.setBorrowCount30d(0);
+        stats.setReservationPendingCount(0);
+        stats.setAvgBorrowDuration(0.0);
+        return stats;
+    }
+}

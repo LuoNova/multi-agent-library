@@ -1,0 +1,265 @@
+package com.library.service;
+
+import com.library.constant.LibraryConstants;
+import com.library.entity.BookBiblio;
+import com.library.entity.BookBorrow;
+import com.library.entity.BookCopy;
+import com.library.entity.User;
+import com.library.mapper.BookBorrowMapper;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+
+import java.time.LocalDateTime;
+
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.*;
+
+//借阅服务单元测试
+@ExtendWith(MockitoExtension.class)
+class BookBorrowServiceTest {
+
+    @Mock
+    private BookBorrowMapper bookBorrowMapper;
+
+    @Mock
+    private BookCopyService bookCopyService;
+
+    @InjectMocks
+    private BookBorrowService bookBorrowService;
+
+    private User testUser;
+    private BookCopy testCopy;
+    private BookBiblio testBiblio;
+    private BookBorrow testBorrow;
+
+    @BeforeEach
+    void setUp() {
+        //初始化测试数据
+        testUser = new User();
+        testUser.setId(1L);
+        testUser.setName("张三");
+        testUser.setMaxBorrowCount(10);
+        testUser.setCurrentBorrowCount(0);
+        testUser.setCreditScore(100);
+        testUser.setStatus("ACTIVE");
+
+        testBiblio = new BookBiblio();
+        testBiblio.setId(1L);
+        testBiblio.setTitle("Java编程思想");
+        testBiblio.setIsbn("9787111213826");
+
+        testCopy = new BookCopy();
+        testCopy.setId(1L);
+        testCopy.setBiblioId(1L);
+        testCopy.setLibraryId(1L);
+        testCopy.setStatus(LibraryConstants.COPY_STATUS_AVAILABLE);
+        testCopy.setLocation("A区-3楼-计算机");
+
+        testBorrow = new BookBorrow();
+        testBorrow.setId(1L);
+        testBorrow.setUserId(1L);
+        testBorrow.setCopyId(1L);
+        testBorrow.setStatus(LibraryConstants.BORROW_STATUS_RESERVED);
+        testBorrow.setDueTime(LocalDateTime.now().plusHours(24));
+    }
+
+    @Test
+    @DisplayName("测试检查用户借阅权限-正常情况")
+    void testCheckBorrowPermission_Success() {
+        //Given: 用户状态正常，未达借阅上限
+        when(bookBorrowMapper.selectCount(any())).thenReturn(0L);
+
+        //When: 检查借阅权限
+        boolean result = bookBorrowService.checkBorrowPermission(testUser, 1L);
+
+        //Then: 应该返回true
+        assertTrue(result);
+    }
+
+    @Test
+    @DisplayName("测试检查用户借阅权限-已达借阅上限")
+    void testCheckBorrowPermission_ExceedMaxCount() {
+        //Given: 用户已达借阅上限
+        testUser.setCurrentBorrowCount(10);
+
+        //When: 检查借阅权限
+        boolean result = bookBorrowService.checkBorrowPermission(testUser, 1L);
+
+        //Then: 应该返回false
+        assertFalse(result);
+    }
+
+    @Test
+    @DisplayName("测试检查用户借阅权限-用户被冻结")
+    void testCheckBorrowPermission_UserFrozen() {
+        //Given: 用户被冻结
+        testUser.setStatus("FROZEN");
+
+        //When: 检查借阅权限
+        boolean result = bookBorrowService.checkBorrowPermission(testUser, 1L);
+
+        //Then: 应该返回false
+        assertFalse(result);
+    }
+
+    @Test
+    @DisplayName("测试检查用户借阅权限-信用分过低")
+    void testCheckBorrowPermission_LowCreditScore() {
+        //Given: 用户信用分过低
+        testUser.setCreditScore(50);
+
+        //When: 检查借阅权限
+        boolean result = bookBorrowService.checkBorrowPermission(testUser, 1L);
+
+        //Then: 应该返回false
+        assertFalse(result);
+    }
+
+    @Test
+    @DisplayName("测试创建借阅记录-成功")
+    void testCreateBorrow_Success() {
+        //Given: 副本可用
+        when(bookCopyService.getById(1L)).thenReturn(testCopy);
+        when(bookBorrowMapper.insert(any(BookBorrow.class))).thenReturn(1);
+        when(bookCopyService.updateCopy(any(BookCopy.class))).thenReturn(true);
+
+        //When: 创建借阅记录
+        boolean result = bookBorrowService.createBorrow(1L, 1L, 1L);
+
+        //Then: 应该成功
+        assertTrue(result);
+        verify(bookBorrowMapper, times(1)).insert(any(BookBorrow.class));
+        verify(bookCopyService, times(1)).updateCopy(any(BookCopy.class));
+    }
+
+    @Test
+    @DisplayName("测试创建借阅记录-副本不存在")
+    void testCreateBorrow_CopyNotFound() {
+        //Given: 副本不存在
+        when(bookCopyService.getById(1L)).thenReturn(null);
+
+        //When: 创建借阅记录
+        boolean result = bookBorrowService.createBorrow(1L, 1L, 1L);
+
+        //Then: 应该失败
+        assertFalse(result);
+        verify(bookBorrowMapper, never()).insert(any(BookBorrow.class));
+    }
+
+    @Test
+    @DisplayName("测试调拨后预留-成功")
+    void testReserveAfterTransfer_Success() {
+        //Given: 副本存在
+        when(bookCopyService.getById(1L)).thenReturn(testCopy);
+        when(bookBorrowMapper.insert(any(BookBorrow.class))).thenReturn(1);
+        when(bookCopyService.updateCopy(any(BookCopy.class))).thenReturn(true);
+
+        //When: 调拨后预留
+        boolean result = bookBorrowService.reserveAfterTransfer(1L, 1L);
+
+        //Then: 应该成功
+        assertTrue(result);
+        verify(bookBorrowMapper, times(1)).insert(any(BookBorrow.class));
+        verify(bookCopyService, times(1)).updateCopy(any(BookCopy.class));
+    }
+
+    @Test
+    @DisplayName("测试取书确认-成功")
+    void testConfirmPickup_Success() {
+        //Given: 借阅记录存在且状态为RESERVED
+        when(bookBorrowMapper.selectById(1L)).thenReturn(testBorrow);
+        when(bookCopyService.getById(1L)).thenReturn(testCopy);
+        when(bookBorrowMapper.updateById(any(BookBorrow.class))).thenReturn(1);
+        when(bookCopyService.updateCopy(any(BookCopy.class))).thenReturn(true);
+
+        //When: 确认取书
+        boolean result = bookBorrowService.confirmPickup(1L);
+
+        //Then: 应该成功
+        assertTrue(result);
+        verify(bookBorrowMapper, times(1)).updateById(any(BookBorrow.class));
+        verify(bookCopyService, times(1)).updateCopy(any(BookCopy.class));
+    }
+
+    @Test
+    @DisplayName("测试取书确认-借阅记录不存在")
+    void testConfirmPickup_BorrowNotFound() {
+        //Given: 借阅记录不存在
+        when(bookBorrowMapper.selectById(1L)).thenReturn(null);
+
+        //When: 确认取书
+        boolean result = bookBorrowService.confirmPickup(1L);
+
+        //Then: 应该失败
+        assertFalse(result);
+        verify(bookBorrowMapper, never()).updateById(any(BookBorrow.class));
+    }
+
+    @Test
+    @DisplayName("测试取书确认-状态不正确")
+    void testConfirmPickup_InvalidStatus() {
+        //Given: 借阅状态不是RESERVED
+        testBorrow.setStatus(LibraryConstants.BORROW_STATUS_BORROWING);
+        when(bookBorrowMapper.selectById(1L)).thenReturn(testBorrow);
+
+        //When: 确认取书
+        boolean result = bookBorrowService.confirmPickup(1L);
+
+        //Then: 应该失败
+        assertFalse(result);
+        verify(bookBorrowMapper, never()).updateById(any(BookBorrow.class));
+    }
+
+    @Test
+    @DisplayName("测试取书确认-已超期")
+    void testConfirmPickup_Expired() {
+        //Given: 借阅已超期
+        testBorrow.setDueTime(LocalDateTime.now().minusHours(1));
+        when(bookBorrowMapper.selectById(1L)).thenReturn(testBorrow);
+
+        //When: 确认取书
+        boolean result = bookBorrowService.confirmPickup(1L);
+
+        //Then: 应该失败
+        assertFalse(result);
+        verify(bookBorrowMapper, never()).updateById(any(BookBorrow.class));
+    }
+
+    @Test
+    @DisplayName("测试释放预留-成功")
+    void testReleaseReservation_Success() {
+        //Given: 借阅记录存在且状态为RESERVED
+        when(bookBorrowMapper.selectById(1L)).thenReturn(testBorrow);
+        when(bookCopyService.getById(1L)).thenReturn(testCopy);
+        when(bookBorrowMapper.updateById(any(BookBorrow.class))).thenReturn(1);
+        when(bookCopyService.updateCopy(any(BookCopy.class))).thenReturn(true);
+
+        //When: 释放预留
+        boolean result = bookBorrowService.releaseReservation(1L);
+
+        //Then: 应该成功
+        assertTrue(result);
+        verify(bookBorrowMapper, times(1)).updateById(any(BookBorrow.class));
+        verify(bookCopyService, times(1)).updateCopy(any(BookCopy.class));
+    }
+
+    @Test
+    @DisplayName("测试释放预留-借阅记录不存在")
+    void testReleaseReservation_BorrowNotFound() {
+        //Given: 借阅记录不存在
+        when(bookBorrowMapper.selectById(1L)).thenReturn(null);
+
+        //When: 释放预留
+        boolean result = bookBorrowService.releaseReservation(1L);
+
+        //Then: 应该失败
+        assertFalse(result);
+        verify(bookBorrowMapper, never()).updateById(any(BookBorrow.class));
+    }
+}

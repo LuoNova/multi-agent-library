@@ -56,20 +56,20 @@
 
 ### 5. 借阅记录表 (tb_book_borrow)
 
-| 字段名            | 类型        | 约束                       | 说明                                     |
-| :---------------- | :---------- | :------------------------- | :--------------------------------------- |
-| id                | bigint      | PRIMARY KEY AUTO_INCREMENT | 主键ID                                   |
-| copy_id           | bigint      | NOT NULL, INDEX, FK        | 外键:副本ID                              |
-| user_id           | bigint      | NOT NULL, INDEX, FK        | 外键:借阅人ID                            |
-| borrow_time       | datetime    | NOT NULL                   | 借出时间                                 |
-| due_time          | datetime    | NOT NULL                   | 应还时间                                 |
-| return_time       | datetime    |                            | 实际归还时间                             |
-| status            | varchar(20) | DEFAULT 'BORROWING'        | RESERVED/BORROWING/RETURNED/TRANSFERRING/CANCELLED |
-| reserved_time     | datetime    |                            | 预留开始时间(调拨完成时间)               |
-| pickup_deadline   | datetime    |                            | 取书截止时间(预留开始时间+24小时)        |
-| actual_pickup_time| datetime    |                            | 实际取书时间                             |
-| pickup_library_id | bigint      |                            | 取书馆ID                                 |
-| create_time       | datetime    | DEFAULT CURRENT_TIMESTAMP  | 创建时间                                 |
+表格
+
+复制
+
+| 字段名      | 类型        | 约束                       | 说明                                     |
+| :---------- | :---------- | :------------------------- | :--------------------------------------- |
+| id          | bigint      | PRIMARY KEY AUTO_INCREMENT | 主键ID                                   |
+| copy_id     | bigint      | NOT NULL, INDEX, FK        | 外键:副本ID                              |
+| user_id     | bigint      | NOT NULL, INDEX, FK        | 外键:借阅人ID                            |
+| borrow_time | datetime    | NOT NULL                   | 借出时间                                 |
+| due_time    | datetime    | NOT NULL                   | 应还时间                                 |
+| return_time | datetime    |                            | 实际归还时间                             |
+| status      | varchar(20) | DEFAULT 'BORROWING'        | RESERVED/BORROWING/RETURNED/TRANSFERRING |
+| create_time | datetime    | DEFAULT CURRENT_TIMESTAMP  | 创建时间                                 |
 
 ### 6. 图书预约表 (tb_book_reservation) 
 
