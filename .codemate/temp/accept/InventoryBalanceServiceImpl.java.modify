@@ -1,0 +1,382 @@
+package com.library.service.impl;
+
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.library.config.BusinessRulesProperties;
+import com.library.constant.LibraryConstants;
+import com.library.entity.*;
+import com.library.mapper.*;
+import com.library.service.InventoryBalanceService;
+import com.library.service.TransferService;
+import lombok.Data;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.LocalDateTime;
+import java.util.*;
+import java.util.stream.Collectors;
+
+//库存平衡服务实现
+@Slf4j
+@Service
+public class InventoryBalanceServiceImpl implements InventoryBalanceService {
+
+    @Autowired
+    private LibraryBiblioStatsMapper statsMapper;
+
+    @Autowired
+    private LibraryMapper libraryMapper;
+
+    @Autowired
+    private BookBiblioMapper biblioMapper;
+
+    @Autowired
+    private BookCopyMapper copyMapper;
+
+    @Autowired
+    private TransferSuggestionMapper suggestionMapper;
+
+    @Autowired
+    private TransferService transferService;
+
+    @Autowired
+    private BusinessRulesProperties businessRulesProperties;
+
+    //分析库存并执行平衡调拨
+    @Override
+    @Transactional
+    public void analyzeAndBalance() {
+        log.info("开始分析库存数据...");
+
+        //1.生成调拨建议
+        List<TransferSuggestion> suggestions = generateTransferSuggestions();
+
+        if (suggestions.isEmpty()) {
+            log.info("未发现需要调拨的书籍");
+            return;
+        }
+
+        log.info("生成{}条调拨建议", suggestions.size());
+
+        //2.保存调拨建议
+        for (TransferSuggestion suggestion : suggestions) {
+            suggestionMapper.insert(suggestion);
+            log.info("保存调拨建议: 从馆{}到馆{}, 书目{}, 数量{}, 评分{}",
+                    suggestion.getFromLibraryId(),
+                    suggestion.getToLibraryId(),
+                    suggestion.getBiblioId(),
+                    suggestion.getSuggestedQuantity(),
+                    suggestion.getPriorityScore());
+
+            //3.根据调拨数量决定是否自动审批
+            if (suggestion.getSuggestedQuantity() <= 3) {
+                //小批量调拨：自动审批并执行
+                log.info("调拨数量<=3，自动审批并执行");
+                executeSuggestion(suggestion.getId());
+            } else {
+                //大批量调拨：等待人工审批
+                log.info("调拨数量>3，等待人工审批");
+                //TODO: 通知馆员审批（管理员系统未实现，暂时在控制台打印）
+                System.out.println("========================================");
+                System.out.println("【调拨建议待审批】");
+                System.out.println("建议ID: " + suggestion.getId());
+                System.out.println("源馆ID: " + suggestion.getFromLibraryId());
+                System.out.println("目标馆ID: " + suggestion.getToLibraryId());
+                System.out.println("书目ID: " + suggestion.getBiblioId());
+                System.out.println("调拨数量: " + suggestion.getSuggestedQuantity());
+                System.out.println("优先级评分: " + suggestion.getPriorityScore());
+                System.out.println("调拨原因: " + suggestion.getReason());
+                System.out.println("========================================");
+            }
+        }
+    }
+
+    //生成调拨建议列表
+    @Override
+    public List<TransferSuggestion> generateTransferSuggestions() {
+        List<TransferSuggestion> suggestions = new ArrayList<>();
+
+        //1.查询所有图书馆
+        List<Library> libraries = libraryMapper.selectList(null);
+        if (libraries.size() < 2) {
+            log.warn("图书馆数量不足，无法进行调拨");
+            return suggestions;
+        }
+
+        //2.查询所有书目统计信息
+        List<LibraryBiblioStats> allStats = statsMapper.selectList(null);
+
+        //3.按书目分组
+        Map<Long, List<LibraryBiblioStats>> statsByBiblio = allStats.stream()
+                .collect(Collectors.groupingBy(LibraryBiblioStats::getBiblioId));
+
+        //4.对每个书目进行分析
+        for (Map.Entry<Long, List<LibraryBiblioStats>> entry : statsByBiblio.entrySet()) {
+            Long biblioId = entry.getKey();
+            List<LibraryBiblioStats> biblioStats = entry.getValue();
+
+            //分析该书目在各馆的库存情况
+            List<TransferSuggestion> biblioSuggestions = analyzeBiblio(biblioId, biblioStats, libraries);
+            suggestions.addAll(biblioSuggestions);
+        }
+
+        //5.按优先级评分排序
+        suggestions.sort((a, b) -> b.getPriorityScore().compareTo(a.getPriorityScore()));
+
+        return suggestions;
+    }
+
+    //分析单个书目的库存情况
+    private List<TransferSuggestion> analyzeBiblio(Long biblioId, List<LibraryBiblioStats> stats, List<Library> libraries) {
+        List<TransferSuggestion> suggestions = new ArrayList<>();
+
+        //找出需求旺盛的馆（目标馆）
+        List<LibraryBiblioStats> demandLibraries = stats.stream()
+                .filter(s -> isDemandLibrary(s))
+                .collect(Collectors.toList());
+
+        //找出库存充足的馆（源馆）
+        List<LibraryBiblioStats> supplyLibraries = stats.stream()
+                .filter(s -> isSupplyLibrary(s))
+                .collect(Collectors.toList());
+
+        //如果没有需求馆或供应馆，跳过
+        if (demandLibraries.isEmpty() || supplyLibraries.isEmpty()) {
+            return suggestions;
+        }
+
+        //为每个需求馆寻找最佳供应馆
+        for (LibraryBiblioStats demand : demandLibraries) {
+            //找出可以供应给该需求馆的馆
+            for (LibraryBiblioStats supply : supplyLibraries) {
+                //不能自己调给自己
+                if (demand.getLibraryId().equals(supply.getLibraryId())) {
+                    continue;
+                }
+
+                //计算调拨数量
+                int quantity = calculateTransferQuantity(demand, supply);
+                if (quantity <= 0) {
+                    continue;
+                }
+
+                //计算优先级评分
+                BigDecimal priorityScore = calculatePriorityScore(demand, supply, libraries);
+
+                //创建调拨建议
+                TransferSuggestion suggestion = new TransferSuggestion();
+                suggestion.setFromLibraryId(supply.getLibraryId());
+                suggestion.setToLibraryId(demand.getLibraryId());
+                suggestion.setBiblioId(biblioId);
+                suggestion.setSuggestedQuantity(quantity);
+                suggestion.setPriorityScore(priorityScore);
+                suggestion.setReason(generateReason(demand, supply));
+                suggestion.setStatus("PENDING");
+                suggestion.setCreateTime(LocalDateTime.now());
+                suggestion.setUpdateTime(LocalDateTime.now());
+
+                suggestions.add(suggestion);
+            }
+        }
+
+        return suggestions;
+    }
+
+    //判断是否为需求馆
+    private boolean isDemandLibrary(LibraryBiblioStats stats) {
+        //条件1:库存不足（< 2本）
+        boolean lowStock = stats.getStockCount() < 2;
+
+        //条件2:需求旺盛（近30天借出次数 > 20次 或 预约排队人数 > 3）
+        boolean highDemand = stats.getBorrowCount30d() > 20 || stats.getReservationPendingCount() > 3;
+
+        return lowStock && highDemand;
+    }
+
+    //判断是否为供应馆
+    private boolean isSupplyLibrary(LibraryBiblioStats stats) {
+        //条件1:库存充足（> 5本）
+        boolean sufficientStock = stats.getStockCount() > 5;
+
+        //条件2:利用率低（近30天借出次数 < 10次）
+        boolean lowUtilization = stats.getBorrowCount30d() < 10;
+
+        return sufficientStock && lowUtilization;
+    }
+
+    //计算调拨数量
+    private int calculateTransferQuantity(LibraryBiblioStats demand, LibraryBiblioStats supply) {
+        //目标馆需求缺口
+        int demandGap = Math.max(0, 5 - demand.getStockCount());
+
+        //源馆可调出数量（最多30%）
+        int maxTransferFromSupply = (int) Math.floor(supply.getStockCount() * 0.3);
+
+        //单次最多调拨5本
+        int maxPerTransfer = 5;
+
+        //取最小值
+        return Math.min(Math.min(demandGap, maxTransferFromSupply), maxPerTransfer);
+    }
+
+    //计算优先级评分
+    private BigDecimal calculatePriorityScore(LibraryBiblioStats demand, LibraryBiblioStats supply, List<Library> libraries) {
+        //目标馆需求度（40%）
+        BigDecimal demandScore = BigDecimal.valueOf(
+                (demand.getBorrowCount30d() + demand.getReservationPendingCount() * 5) * 0.4
+        );
+
+        //源馆富余度（30%）
+        BigDecimal supplyScore = BigDecimal.valueOf(
+                (supply.getStockCount() - 5) * 0.3
+        );
+
+        //距离成本（20%）- 简化处理，假设距离为1
+        BigDecimal distanceScore = BigDecimal.valueOf(1.0 * 0.2);
+
+        //历史调拨频率（10%）- 简化处理，假设为0
+        BigDecimal historyScore = BigDecimal.ZERO;
+
+        //总分
+        BigDecimal totalScore = demandScore.add(supplyScore).add(distanceScore).add(historyScore);
+
+        return totalScore.setScale(2, RoundingMode.HALF_UP);
+    }
+
+    //生成调拨原因
+    private String generateReason(LibraryBiblioStats demand, LibraryBiblioStats supply) {
+        Library demandLibrary = libraryMapper.selectById(demand.getLibraryId());
+        Library supplyLibrary = libraryMapper.selectById(supply.getLibraryId());
+        BookBiblio biblio = biblioMapper.selectById(demand.getBiblioId());
+
+        return String.format("%s需求旺盛（库存%d，近30天借出%d次），%s库存充足（库存%d，近30天借出%d次）",
+                demandLibrary != null ? demandLibrary.getName() : "目标馆",
+                demand.getStockCount(),
+                demand.getBorrowCount30d(),
+                supplyLibrary != null ? supplyLibrary.getName() : "源馆",
+                supply.getStockCount(),
+                supply.getBorrowCount30d());
+    }
+
+    //执行调拨建议（自动审批模式）
+    @Override
+    @Transactional
+    public void executeSuggestion(Long suggestionId) {
+        TransferSuggestion suggestion = suggestionMapper.selectById(suggestionId);
+        if (suggestion == null) {
+            log.error("调拨建议不存在: {}", suggestionId);
+            return;
+        }
+
+        if (!"PENDING".equals(suggestion.getStatus())) {
+            log.error("调拨建议状态不正确: {}", suggestion.getStatus());
+            return;
+        }
+
+        log.info("开始执行调拨建议: {}", suggestionId);
+
+        //1.查找源馆的可用副本
+        List<BookCopy> availableCopies = copyMapper.selectList(
+                new LambdaQueryWrapper<BookCopy>()
+                        .eq(BookCopy::getBiblioId, suggestion.getBiblioId())
+                        .eq(BookCopy::getLibraryId, suggestion.getFromLibraryId())
+                        .eq(BookCopy::getStatus, LibraryConstants.COPY_STATUS_AVAILABLE)
+                        .last("LIMIT " + suggestion.getSuggestedQuantity())
+        );
+
+        if (availableCopies.isEmpty()) {
+            log.error("源馆没有可用的副本");
+            suggestion.setStatus("REJECTED");
+            suggestion.setReason("源馆没有可用的副本");
+            suggestionMapper.updateById(suggestion);
+            return;
+        }
+
+        //2.创建调拨单
+        for (BookCopy copy : availableCopies) {
+            //创建调拨单
+            Long transferId = transferService.createTransfer(
+                    copy.getId(),
+                    suggestion.getFromLibraryId(),
+                    suggestion.getToLibraryId(),
+                    null //没有预约ID
+            );
+
+            //更新调拨单的调拨原因和建议ID
+            BookTransfer transfer = new BookTransfer();
+            transfer.setId(transferId);
+            transfer.setTransferReason("INVENTORY_BALANCE");
+            transfer.setSuggestionId(suggestionId);
+            //TODO: 更新调拨单（需要TransferService提供更新方法）
+        }
+
+        //3.更新建议状态
+        suggestion.setStatus("EXECUTED");
+        suggestion.setUpdateTime(LocalDateTime.now());
+        suggestionMapper.updateById(suggestion);
+
+        log.info("调拨建议执行完成: {}", suggestionId);
+    }
+
+    //审批调拨建议（人工审批模式）
+    @Override
+    @Transactional
+    public void approveSuggestion(Long suggestionId, Long approverId) {
+        TransferSuggestion suggestion = suggestionMapper.selectById(suggestionId);
+        if (suggestion == null) {
+            log.error("调拨建议不存在: {}", suggestionId);
+            return;
+        }
+
+        suggestion.setStatus("APPROVED");
+        suggestion.setApproverId(approverId);
+        suggestion.setApproveTime(LocalDateTime.now());
+        suggestion.setUpdateTime(LocalDateTime.now());
+        suggestionMapper.updateById(suggestion);
+
+        log.info("调拨建议已审批: {}", suggestionId);
+
+        //审批通过后执行
+        executeSuggestion(suggestionId);
+    }
+
+    //拒绝调拨建议
+    @Override
+    @Transactional
+    public void rejectSuggestion(Long suggestionId, Long approverId, String reason) {
+        TransferSuggestion suggestion = suggestionMapper.selectById(suggestionId);
+        if (suggestion == null) {
+            log.error("调拨建议不存在: {}", suggestionId);
+            return;
+        }
+
+        suggestion.setStatus("REJECTED");
+        suggestion.setApproverId(approverId);
+        suggestion.setApproveTime(LocalDateTime.now());
+        suggestion.setReason(reason);
+        suggestion.setUpdateTime(LocalDateTime.now());
+        suggestionMapper.updateById(suggestion);
+
+        log.info("调拨建议已拒绝: {}", suggestionId);
+    }
+
+    //获取待审批的调拨建议
+    @Override
+    public List<TransferSuggestion> getPendingSuggestions() {
+        return suggestionMapper.selectList(
+                new LambdaQueryWrapper<TransferSuggestion>()
+                        .eq(TransferSuggestion::getStatus, "PENDING")
+                        .orderByDesc(TransferSuggestion::getPriorityScore)
+        );
+    }
+
+    //手动触发库存平衡分析
+    @Override
+    public void triggerManualBalance() {
+        log.info("手动触发库存平衡分析");
+        analyzeAndBalance();
+    }
+}

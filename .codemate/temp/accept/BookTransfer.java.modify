@@ -36,18 +36,6 @@ public class BookTransfer {
     //完成时间
     private LocalDateTime completeTime;
 
-    //预计到达时间
-    private LocalDateTime estimatedArrivalTime;
-
-    //实际到达时间
-    private LocalDateTime actualArrivalTime;
-
-    //调拨原因:USER_REQUEST-用户请求,INVENTORY_BALANCE-库存平衡
-    private String transferReason;
-
-    //关联的调拨建议ID
-    private Long suggestionId;
-
     //操作人ID
     private Long operatorId;
 }

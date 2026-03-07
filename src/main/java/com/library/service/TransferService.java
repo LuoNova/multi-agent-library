@@ -40,9 +40,16 @@ public class TransferService {
     //创建调拨记录（还书时调用，替代原BookTransferService.createTransferRecord）
     //修改说明：统一使用IN_TRANSIT状态（跳过PENDING），简化流程
     @Transactional
+    //创建调拨记录（原有方法，保持向后兼容）
     public Long createTransfer(Long copyId, Long fromLibraryId, Long toLibraryId, Long reservationId) {
-        log.info("创建调拨记录：副本{}从馆{}到馆{}，关联预约{}",
-                copyId, fromLibraryId, toLibraryId, reservationId);
+        return createTransfer(copyId, fromLibraryId, toLibraryId, reservationId, "USER_REQUEST", null);
+    }
+
+    //创建调拨记录（增强方法，支持指定调拨原因）
+    public Long createTransfer(Long copyId, Long fromLibraryId, Long toLibraryId, Long reservationId,
+                               String transferReason, Long suggestionId) {
+        log.info("创建调拨记录：副本{}从馆{}到馆{}，关联预约{}，调拨原因{}，建议ID{}",
+                copyId, fromLibraryId, toLibraryId, reservationId, transferReason, suggestionId);
 
         BookTransfer transfer = new BookTransfer();
         transfer.setCopyId(copyId);
@@ -53,6 +60,9 @@ public class TransferService {
         //预计30分钟后到达（用于定时任务自动完成）
         transfer.setCompleteTime(LocalDateTime.now().plusMinutes(
                 businessRulesProperties.getTransfer().getEstimatedMinutes()));
+        //设置调拨原因和建议ID
+        transfer.setTransferReason(transferReason);
+        transfer.setSuggestionId(suggestionId);
 
         transferMapper.insert(transfer);
         log.info("调拨单创建成功：{}", transfer.getId());
