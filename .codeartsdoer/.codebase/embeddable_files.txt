@@ -1,4 +1,5 @@
 src/main/java/com/library/mapper/SeatAreaMapper.java
+src/main/java/com/library/mapper/TransferOrderMapper.java
 src/main/java/com/library/entity/BookBorrow.java
 src/main/java/com/library/service/LibraryService.java
 src/main/java/com/library/entity/SeatReservation.java
@@ -11,6 +12,7 @@ src/main/java/com/library/agent/dto/ContractNetMessage.java
 src/main/java/com/library/mapper/NotificationTemplateMapper.java
 src/main/java/com/library/entity/Library.java
 src/main/java/com/library/dto/NotificationMessage.java
+src/main/java/com/library/entity/TransferOrder.java
 src/main/java/com/library/mapper/TransferSuggestionMapper.java
 src/main/java/com/library/entity/RepairTicket.java
 src/main/java/com/library/mapper/EquipmentMapper.java
@@ -19,7 +21,6 @@ src/main/java/com/library/config/OpenApiConfig.java
 src/main/java/com/library/entity/BookTransfer.java
 src/main/java/com/library/mapper/SeatReservationMapper.java
 src/main/java/com/library/task/ReservationExpireTask.java
-src/main/java/com/library/service/impl/InventoryBalanceServiceImpl.java
 src/main/java/com/library/config/BusinessRulesProperties.java
 src/main/java/com/library/entity/NotificationTemplate.java
 src/main/java/com/library/util/AgentTaskManager.java

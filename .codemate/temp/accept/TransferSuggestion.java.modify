@@ -43,7 +43,7 @@ public class TransferSuggestion {
     private LocalDateTime approveTime;
 
     //关联的调拨单ID
-    private Long orderId;
+    private Long transferId;
 
     //创建时间
     private LocalDateTime createTime;

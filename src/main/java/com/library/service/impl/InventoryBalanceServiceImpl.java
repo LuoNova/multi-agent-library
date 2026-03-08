@@ -5,6 +5,7 @@ import com.library.config.BusinessRulesProperties;
 import com.library.constant.LibraryConstants;
 import com.library.entity.*;
 import com.library.mapper.*;
+import com.library.service.BookCopyService;
 import com.library.service.InventoryBalanceService;
 import com.library.service.TransferService;
 import lombok.Data;
@@ -40,7 +41,16 @@ public class InventoryBalanceServiceImpl implements InventoryBalanceService {
     private TransferSuggestionMapper suggestionMapper;
 
     @Autowired
+    private TransferOrderMapper orderMapper;
+
+    @Autowired
+    private BookTransferMapper transferMapper;
+
+    @Autowired
     private TransferService transferService;
+
+    @Autowired
+    private BookCopyService bookCopyService;
 
     @Autowired
     private BusinessRulesProperties businessRulesProperties;
@@ -290,7 +300,7 @@ public class InventoryBalanceServiceImpl implements InventoryBalanceService {
             return;
         }
 
-        log.info("开始执行调拨建议: {}", suggestionId);
+        log.info("开始执行调拨建议: {}, 计划调拨{}本", suggestionId, suggestion.getSuggestedQuantity());
 
         //1.查找源馆的可用副本
         List<BookCopy> availableCopies = copyMapper.selectList(
@@ -309,28 +319,67 @@ public class InventoryBalanceServiceImpl implements InventoryBalanceService {
             return;
         }
 
-        //2.创建调拨单
+        //2.创建调拨单（批量调拨的主记录）
+        TransferOrder order = new TransferOrder();
+        order.setSuggestionId(suggestionId);
+        order.setFromLibraryId(suggestion.getFromLibraryId());
+        order.setToLibraryId(suggestion.getToLibraryId());
+        order.setBiblioId(suggestion.getBiblioId());
+        order.setPlannedQuantity(suggestion.getSuggestedQuantity());
+        order.setActualQuantity(availableCopies.size()); //实际可调拨数量
+        order.setStatus("IN_PROGRESS"); //执行中
+        order.setCreateTime(LocalDateTime.now());
+        orderMapper.insert(order);
+        log.info("创建调拨单成功: orderId={}, 计划{}本, 实际{}本",
+                order.getId(), order.getPlannedQuantity(), order.getActualQuantity());
+
+        //3.为每个副本创建调拨记录并执行
+        int successCount = 0;
         for (BookCopy copy : availableCopies) {
-            //创建调拨单（使用增强方法，指定调拨原因和建议ID）
+            //创建调拨记录（使用增强方法，指定调拨原因、建议ID和调拨单ID）
             Long transferId = transferService.createTransfer(
                     copy.getId(),
                     suggestion.getFromLibraryId(),
                     suggestion.getToLibraryId(),
                     null, //没有预约ID
                     "INVENTORY_BALANCE", //调拨原因：库存平衡
-                    suggestionId //关联的调拨建议ID
+                    suggestionId, //关联的调拨建议ID
+                    order.getId() //关联的调拨单ID
             );
 
-            log.info("调拨单创建成功：transferId={}, copyId={}, 调拨原因=INVENTORY_BALANCE",
-                    transferId, copy.getId());
+            log.info("调拨记录创建成功：transferId={}, copyId={}", transferId, copy.getId());
+
+            //执行调拨：更新副本状态为IN_TRANSIT，源馆库存-1
+            boolean success = bookCopyService.executeTransfer(
+                    copy.getId(),
+                    suggestion.getFromLibraryId(),
+                    suggestion.getToLibraryId(),
+                    suggestion.getBiblioId()
+            );
+
+            if (!success) {
+                log.error("副本{}调拨执行失败，副本状态和库存未更新", copy.getId());
+                //继续处理其他副本，不中断整个流程
+            } else {
+                successCount++;
+                log.info("副本{}调拨执行成功，状态已更新为IN_TRANSIT，源馆库存已减少", copy.getId());
+            }
         }
 
-        //3.更新建议状态
+        //4.更新调拨单状态
+        order.setStatus("COMPLETED");
+        order.setActualQuantity(successCount);
+        order.setCompleteTime(LocalDateTime.now());
+        orderMapper.updateById(order);
+        log.info("调拨单执行完成: orderId={}, 成功调拨{}本", order.getId(), successCount);
+
+        //5.更新建议状态
         suggestion.setStatus("EXECUTED");
+        suggestion.setOrderId(order.getId()); //关联调拨单
         suggestion.setUpdateTime(LocalDateTime.now());
         suggestionMapper.updateById(suggestion);
 
-        log.info("调拨建议执行完成: {}", suggestionId);
+        log.info("调拨建议执行完成: suggestionId={}, orderId={}", suggestionId, order.getId());
     }
 
     //审批调拨建议（人工审批模式）

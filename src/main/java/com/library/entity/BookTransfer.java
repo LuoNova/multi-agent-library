@@ -48,6 +48,9 @@ public class BookTransfer {
     //关联的调拨建议ID
     private Long suggestionId;
 
+    //关联的调拨单ID
+    private Long orderId;
+
     //操作人ID
     private Long operatorId;
 }

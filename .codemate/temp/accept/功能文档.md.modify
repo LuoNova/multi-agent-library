@@ -706,6 +706,126 @@ if (存在TRANSFERRING状态的Borrow记录) {
 
 系统基于馆藏书目统计表（`tb_library_biblio_stats`）的借阅热度分析，自动触发低利用率馆向高需求馆的主动调拨，实现库存动态平衡，提高资源利用率。
 
+### 业务规则
+
+- **触发条件**：
+  - 目标馆库存不足（< 2本）
+  - 目标馆需求旺盛（近30天借出次数 > 20次 或 预约排队人数 > 3）
+  - 源馆库存充足（> 5本且利用率低）
+
+- **调拨数量计算**：
+  ```
+  调拨数量 = min(
+      源馆可用库存 × 0.3,  // 最多调出源馆30%的库存
+      目标馆需求缺口,       // 目标馆需要的数量
+      5                     // 单次最多调拨5本
+  )
+  ```
+
+- **审批流程**（混合模式）：
+  - 小批量调拨（≤ 3本）：自动审批并执行
+  - 大批量调拨（> 3本）：等待人工审批
+
+- **执行时机**：
+  - 定时任务：每天凌晨2点执行一次
+  - 手动触发：支持管理员手动触发
+
+### 参与智能体
+
+| 智能体 | 角色 | 职责 |
+|:------|:-----|:-----|
+| InventoryBalanceAgent | 库存平衡代理 | 定期分析库存、生成调拨建议、执行调拨 |
+
+### 执行流程
+
+1. **库存分析**：
+   - 查询所有图书馆的书目统计信息
+   - 识别需求旺盛的馆（目标馆）
+   - 识别库存充足的馆（源馆）
+
+2. **生成调拨建议**：
+   - 为每个需求馆寻找最佳供应馆
+   - 计算调拨数量和优先级评分
+   - 生成调拨建议并保存到数据库
+
+3. **审批执行**：
+   - 小批量调拨：自动审批并执行
+   - 大批量调拨：通知馆员审批
+   - 审批通过后创建调拨单
+
+4. **调拨执行**：
+   - 查找源馆的可用副本
+   - 创建调拨单（状态：IN_TRANSIT）
+   - 更新副本状态（IN_TRANSIT）
+   - 更新调拨建议状态（EXECUTED）
+
+### 优先级评分算法
+
+```
+调拨优先级评分 = 
+    目标馆需求度 × 0.4 +    // 近30天借出次数、预约排队人数
+    源馆富余度 × 0.3 +      // 库存数量、利用率
+    距离成本 × 0.2 +        // 馆与馆之间的距离
+    历史调拨频率 × 0.1      // 历史调拨成功率
+```
+
+### 数据库变更
+
+**新增表**：`tb_transfer_suggestion`（调拨建议表）
+
+| 字段名 | 类型 | 说明 |
+|:------|:-----|:-----|
+| id | bigint | 主键ID |
+| from_library_id | bigint | 源馆ID |
+| to_library_id | bigint | 目标馆ID |
+| biblio_id | bigint | 书目ID |
+| suggested_quantity | int | 建议调拨数量 |
+| priority_score | decimal(5,2) | 优先级评分 |
+| reason | varchar(200) | 调拨原因 |
+| status | varchar(20) | 状态:PENDING/APPROVED/REJECTED/EXECUTED |
+| approver_id | bigint | 审批人ID |
+| approve_time | datetime | 审批时间 |
+| transfer_id | bigint | 关联的调拨单ID |
+
+**调拨表补充字段**：`tb_book_transfer`
+
+| 字段名 | 类型 | 说明 |
+|:------|:-----|:-----|
+| estimated_arrival_time | datetime | 预计到达时间 |
+| actual_arrival_time | datetime | 实际到达时间 |
+| transfer_reason | varchar(50) | 调拨原因:USER_REQUEST/INVENTORY_BALANCE |
+| suggestion_id | bigint | 关联的调拨建议ID |
+
+### API接口
+
+| 接口 | 方法 | 说明 |
+|:-----|:-----|:-----|
+| /api/transfer/suggestion/list | GET | 查询调拨建议列表 |
+| /api/transfer/suggestion/{id} | GET | 查询调拨建议详情 |
+| /api/transfer/suggestion/approve/{id} | POST | 审批通过调拨建议 |
+| /api/transfer/suggestion/reject/{id} | POST | 拒绝调拨建议 |
+| /api/transfer/trigger-balance | POST | 手动触发库存平衡分析 |
+
+### 测试场景矩阵
+
+| 测试场景 | 前置条件 | 预期结果 | 关键验证点 |
+|:---------|:---------|:---------|:-----------|
+| 自动审批执行 | 调拨数量≤3本 | 自动创建调拨单 | 建议状态EXECUTED，调拨单创建成功 |
+| 人工审批执行 | 调拨数量>3本 | 等待审批 | 建议状态PENDING，控制台打印通知 |
+| 审批通过 | 建议状态PENDING | 创建调拨单 | 建议状态APPROVED→EXECUTED |
+| 审批拒绝 | 建议状态PENDING | 不创建调拨单 | 建议状态REJECTED |
+| 无需调拨 | 所有馆库存均衡 | 不生成建议 | 建议列表为空 |
+| 手动触发 | 任意状态 | 立即执行分析 | 控制台打印分析日志 |
+
+
+---
+
+## 功能5：**主动调拨与库存平衡（Proactive Transfer & Inventory Balance）**
+
+### 功能描述
+
+系统基于馆藏书目统计表（`tb_library_biblio_stats`）的借阅热度分析，自动触发低利用率馆向高需求馆的主动调拨，实现库存动态平衡，提高资源利用率。
+
 系统支持两种审批模式：
 - **自动审批**：调拨数量≤3本时，系统自动审批并执行
 - **人工审批**：调拨数量>3本时，生成调拨建议等待馆员审批
@@ -909,65 +1029,6 @@ POST /api/transfer/suggestion/reject/1?approverId=1&reason=测试拒绝
 | /api/transfer/suggestion/approve/{id} | POST | 审批通过调拨建议 |
 | /api/transfer/suggestion/reject/{id} | POST | 拒绝调拨建议 |
 | /api/transfer/trigger-balance | POST | 手动触发库存平衡分析 |
-| /api/transfer/complete-batch | POST | 批量调拨完成回调 |
-
-### 批量调拨完成接口
-
-**接口路径**：`POST /api/transfer/complete-batch`
-
-**功能描述**：物流系统或馆员确认批量调拨图书已到达目标馆，完成批量调拨闭环
-
-**请求参数**：
-
-| 参数名 | 类型 | 必填 | 说明 |
-| :--- | :--- | :--- | :--- |
-| orderId | Long | 是 | 调拨单ID |
-| actualArriveTime | DateTime | 否 | 实际到达时间（可选，默认为当前时间） |
-
-**请求示例**：
-```json
-{
-  "orderId": 1,
-  "actualArriveTime": "2026-03-08T20:00:00"
-}
-```
-
-**响应结果**：
-
-| 字段 | 类型 | 说明 |
-| :--- | :--- | :--- |
-| code | Integer | 状态码(200成功,400失败) |
-| message | String | 提示信息 |
-| data | Object | 响应数据 |
-| └─ orderId | Long | 调拨单ID |
-| └─ completedCount | Integer | 成功调拨数量 |
-
-**响应示例**：
-```json
-{
-  "code": 200,
-  "message": "批量调拨完成，成功调拨5本",
-  "data": {
-    "orderId": 1,
-    "completedCount": 5
-  }
-}
-```
-
-**处理流程**：
-1. 校验调拨单存在性和状态(必须为IN_PROGRESS或COMPLETED)
-2. 查询所有运输中的调拨记录
-3. 批量更新调拨记录状态为COMPLETED
-4. 批量更新副本状态为AVAILABLE(直接上架)
-5. 更新目标馆库存(+N)
-6. 更新调拨单状态为COMPLETED
-7. 返回结果
-
-**关键特点**：
-- **跳过用户逻辑**：INVENTORY_BALANCE场景没有用户,直接上架
-- **批量操作**：一次处理多本图书
-- **事务保证**：使用@Transactional确保数据一致性
-- **纯三层架构**：不涉及Agent,纯业务逻辑处理
 
 ### 测试场景矩阵
 
@@ -982,10 +1043,9 @@ POST /api/transfer/suggestion/reject/1?approverId=1&reason=测试拒绝
 
 ### 已知问题和TODO
 
-1. **调拨执行已完善**：
-   - ✅ 已实现调拨单创建和调拨记录创建
-   - ✅ 已实现副本状态更新和库存减少
-   - ✅ 已实现批量调拨完成接口
+1. **调拨执行不完整**：
+   - 当前只创建了调拨单，未更新副本状态和库存
+   - TODO: 调用`bookCopyService.executeTransfer()`更新副本状态和库存
 
 2. **通知功能未实现**：
    - 大批量调拨时，控制台打印通知
@@ -998,44 +1058,6 @@ POST /api/transfer/suggestion/reject/1?approverId=1&reason=测试拒绝
 4. **历史调拨频率未实现**：
    - 当前历史调拨频率固定为0
    - TODO: 实现历史调拨频率统计
-
-### 功能完善总结
-
-**批量调拨功能已完整实现**：
-
-1. **调拨建议生成**：
-   - 定时任务分析库存分布
-   - 生成调拨建议并计算优先级
-   - 支持自动审批和人工审批
-
-2. **调拨执行**：
-   - 创建调拨单管理批量调拨
-   - 创建多条调拨记录关联同一调拨单
-   - 更新副本状态为IN_TRANSIT
-   - 减少源馆库存
-
-3. **调拨完成**：
-   - 新增批量调拨完成接口
-   - 批量更新调拨记录状态
-   - 批量更新副本状态为AVAILABLE(直接上架)
-   - 增加目标馆库存
-   - 更新调拨单状态
-
-**数据流程**：
-```
-调拨建议(建议5本)
-  → 审批通过
-  → 创建调拨单(记录批量调拨信息)
-  → 创建5条调拨记录(共享order_id)
-  → 执行调拨(副本状态IN_TRANSIT,源馆库存-5)
-  → 调拨完成(副本状态AVAILABLE,目标馆库存+5)
-```
-
-**技术特点**：
-- 标准三层架构设计
-- 事务管理保证数据一致性
-- 详细的日志记录
-- 完整的异常处理
 
 ---
 

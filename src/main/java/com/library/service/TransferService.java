@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 //调拨履约服务（职责：管理调拨全生命周期（创建->运输->完成），确保库存、借阅记录、用户计数的一致性）
 @Slf4j
@@ -30,6 +31,8 @@ public class TransferService {
     private BookBorrowMapper bookBorrowMapper;
     @Autowired
     private UserMapper userMapper;
+    @Autowired
+    private TransferOrderMapper orderMapper;
 
     @Autowired
     private BookTransferService bookTransferService;
@@ -42,14 +45,20 @@ public class TransferService {
     @Transactional
     //创建调拨记录（原有方法，保持向后兼容）
     public Long createTransfer(Long copyId, Long fromLibraryId, Long toLibraryId, Long reservationId) {
-        return createTransfer(copyId, fromLibraryId, toLibraryId, reservationId, "USER_REQUEST", null);
+        return createTransfer(copyId, fromLibraryId, toLibraryId, reservationId, "USER_REQUEST", null, null);
     }
 
     //创建调拨记录（增强方法，支持指定调拨原因）
     public Long createTransfer(Long copyId, Long fromLibraryId, Long toLibraryId, Long reservationId,
                                String transferReason, Long suggestionId) {
-        log.info("创建调拨记录：副本{}从馆{}到馆{}，关联预约{}，调拨原因{}，建议ID{}",
-                copyId, fromLibraryId, toLibraryId, reservationId, transferReason, suggestionId);
+        return createTransfer(copyId, fromLibraryId, toLibraryId, reservationId, transferReason, suggestionId, null);
+    }
+
+    //创建调拨记录（完整方法，支持指定调拨原因、建议ID和调拨单ID）
+    public Long createTransfer(Long copyId, Long fromLibraryId, Long toLibraryId, Long reservationId,
+                               String transferReason, Long suggestionId, Long orderId) {
+        log.info("创建调拨记录：副本{}从馆{}到馆{}，关联预约{}，调拨原因{}，建议ID{}，调拨单ID{}",
+                copyId, fromLibraryId, toLibraryId, reservationId, transferReason, suggestionId, orderId);
 
         BookTransfer transfer = new BookTransfer();
         transfer.setCopyId(copyId);
@@ -60,12 +69,13 @@ public class TransferService {
         //预计30分钟后到达（用于定时任务自动完成）
         transfer.setCompleteTime(LocalDateTime.now().plusMinutes(
                 businessRulesProperties.getTransfer().getEstimatedMinutes()));
-        //设置调拨原因和建议ID
+        //设置调拨原因、建议ID和调拨单ID
         transfer.setTransferReason(transferReason);
         transfer.setSuggestionId(suggestionId);
+        transfer.setOrderId(orderId);
 
         transferMapper.insert(transfer);
-        log.info("调拨单创建成功：{}", transfer.getId());
+        log.info("调拨记录创建成功：{}", transfer.getId());
 
         return transfer.getId();
     }
@@ -228,6 +238,129 @@ public class TransferService {
 
         public static TransferCompleteResult fail(String msg) {
             TransferCompleteResult r = new TransferCompleteResult();
+            r.success = false;
+            r.message = msg;
+            return r;
+        }
+    }
+
+    //批量调拨完成方法
+    @Transactional
+    public BatchCompleteResult completeBatchTransfer(Long orderId, LocalDateTime actualArriveTime) {
+        log.info("处理批量调拨完成回调：orderId={}, 实际到达时间={}", orderId, actualArriveTime);
+
+        //1.校验调拨单
+        TransferOrder order = orderMapper.selectById(orderId);
+        if (order == null) {
+            log.error("调拨单不存在：{}", orderId);
+            return BatchCompleteResult.fail("调拨单不存在");
+        }
+
+        //校验状态必须为IN_PROGRESS
+        if (!"IN_PROGRESS".equals(order.getStatus()) && !"COMPLETED".equals(order.getStatus())) {
+            log.warn("调拨单状态异常：当前{}, 期望IN_PROGRESS或COMPLETED", order.getStatus());
+            return BatchCompleteResult.fail("调拨单状态异常，当前状态：" + order.getStatus());
+        }
+
+        //2.查询所有调拨记录
+        List<BookTransfer> transfers = transferMapper.selectList(
+                new LambdaQueryWrapper<BookTransfer>()
+                        .eq(BookTransfer::getOrderId, orderId)
+                        .eq(BookTransfer::getStatus, LibraryConstants.TRANSFER_STATUS_IN_TRANSIT)
+        );
+
+        if (transfers.isEmpty()) {
+            log.warn("调拨单{}没有运输中的调拨记录", orderId);
+            return BatchCompleteResult.fail("没有运输中的调拨记录");
+        }
+
+        log.info("找到{}条运输中的调拨记录", transfers.size());
+
+        //3.批量更新调拨记录状态
+        LocalDateTime completeTime = actualArriveTime != null ? actualArriveTime : LocalDateTime.now();
+        int successCount = 0;
+
+        for (BookTransfer transfer : transfers) {
+            transfer.setStatus(LibraryConstants.TRANSFER_STATUS_COMPLETED);
+            transfer.setCompleteTime(completeTime);
+            transfer.setActualArrivalTime(completeTime);
+            transferMapper.updateById(transfer);
+            successCount++;
+        }
+
+        log.info("成功更新{}条调拨记录状态为COMPLETED", successCount);
+
+        //4.批量更新副本状态
+        for (BookTransfer transfer : transfers) {
+            BookCopy copy = copyMapper.selectById(transfer.getCopyId());
+            if (copy == null) {
+                log.error("副本不存在：{}", transfer.getCopyId());
+                continue;
+            }
+
+            copy.setLibraryId(transfer.getToLibraryId());
+            copy.setStatus(LibraryConstants.COPY_STATUS_AVAILABLE); //直接上架
+            copy.setLocation("馆" + transfer.getToLibraryId() + "-调拨暂存区");
+            copy.setUpdateTime(LocalDateTime.now());
+            copyMapper.updateById(copy);
+
+            log.info("副本{}已移至馆{}，状态改为AVAILABLE", copy.getId(), transfer.getToLibraryId());
+        }
+
+        //5.更新目标馆库存
+        LibraryBiblioStats stats = statsMapper.selectByLibraryAndBiblio(
+                order.getToLibraryId(), order.getBiblioId());
+
+        if (stats != null) {
+            stats.setStockCount(stats.getStockCount() + successCount);
+            stats.setLastCalculatedTime(LocalDateTime.now());
+            statsMapper.updateById(stats);
+            log.info("馆{}库存+{}，当前库存{}", order.getToLibraryId(), successCount, stats.getStockCount());
+        } else {
+            //极端情况：目标馆没有该书记录，新建统计记录
+            stats = new LibraryBiblioStats();
+            stats.setLibraryId(order.getToLibraryId());
+            stats.setBiblioId(order.getBiblioId());
+            stats.setStockCount(successCount);
+            stats.setLastCalculatedTime(LocalDateTime.now());
+            statsMapper.insert(stats);
+            log.info("为目标馆{}新建书目{}的统计记录，库存{}", order.getToLibraryId(), order.getBiblioId(), successCount);
+        }
+
+        //6.更新调拨单状态
+        order.setStatus("COMPLETED");
+        order.setActualQuantity(successCount);
+        order.setCompleteTime(completeTime);
+        orderMapper.updateById(order);
+
+        log.info("调拨单{}状态更新为COMPLETED，实际调拨{}本", orderId, successCount);
+
+        return BatchCompleteResult.success(
+                "批量调拨完成，成功调拨" + successCount + "本",
+                orderId,
+                successCount
+        );
+    }
+
+    //批量调拨完成结果内部类
+    @Data
+    public static class BatchCompleteResult {
+        private boolean success;
+        private String message;
+        private Long orderId; //调拨单ID
+        private Integer completedCount; //成功调拨数量
+
+        public static BatchCompleteResult success(String msg, Long orderId, Integer count) {
+            BatchCompleteResult r = new BatchCompleteResult();
+            r.success = true;
+            r.message = msg;
+            r.orderId = orderId;
+            r.completedCount = count;
+            return r;
+        }
+
+        public static BatchCompleteResult fail(String msg) {
+            BatchCompleteResult r = new BatchCompleteResult();
             r.success = false;
             r.message = msg;
             return r;

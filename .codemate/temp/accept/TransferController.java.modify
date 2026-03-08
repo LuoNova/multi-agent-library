@@ -3,7 +3,6 @@ package com.library.controller;
 import com.library.common.Result;
 import com.library.service.TransferService;
 import com.library.service.TransferService.TransferCompleteResult;
-import com.library.service.TransferService.BatchCompleteResult;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -53,39 +52,6 @@ public class TransferController {
     public static class TransferCompleteRequest {
         @Schema(description = "调拨单ID", example = "20", required = true)
         private Long transferId;
-
-        @Schema(description = "实际到达时间（可选，默认为当前时间）", example = "2024-01-15T14:30:00")
-        private LocalDateTime actualArriveTime;
-    }
-
-    //批量调拨完成接口
-    @PostMapping("/complete-batch")
-    @Operation(summary = "批量调拨完成回调", description = "物流系统或馆员确认批量调拨图书已到达目标馆，完成批量调拨闭环")
-    public Result<BatchCompleteResult> completeBatchTransfer(
-            @Parameter(description = "批量调拨完成请求", required = true)
-            @RequestBody BatchCompleteRequest request) {
-
-        log.info("收到批量调拨完成请求：orderId={}, 到达时间={}",
-                request.getOrderId(), request.getActualArriveTime());
-
-        BatchCompleteResult result = transferService.completeBatchTransfer(
-                request.getOrderId(),
-                request.getActualArriveTime()
-        );
-
-        if (result.isSuccess()) {
-            return Result.success(result.getMessage(), result);
-        } else {
-            return Result.fail(result.getMessage());
-        }
-    }
-
-    //批量调拨完成请求参数
-    @Schema(description = "批量调拨完成回调请求参数")
-    @Data
-    public static class BatchCompleteRequest {
-        @Schema(description = "调拨单ID", example = "1", required = true)
-        private Long orderId;
 
         @Schema(description = "实际到达时间（可选，默认为当前时间）", example = "2024-01-15T14:30:00")
         private LocalDateTime actualArriveTime;
