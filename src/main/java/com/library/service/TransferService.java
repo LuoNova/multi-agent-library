@@ -35,6 +35,9 @@ public class TransferService {
     private TransferOrderMapper orderMapper;
 
     @Autowired
+    private TransferNotificationService notificationService;
+
+    @Autowired
     private BookTransferService bookTransferService;
 
     @Autowired
