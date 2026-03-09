@@ -1,0 +1,91 @@
+package com.library.controller;
+
+import com.library.common.Result;
+import com.library.task.ReservationExpireTask;
+import com.library.task.TransferDelayCheckTask;
+import com.library.task.InventoryBalanceTask;
+import com.library.task.ReservationWarningTask;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+//定时任务测试控制器
+//提供手动触发定时任务的接口，用于测试和调试
+@Slf4j
+@RestController
+@RequestMapping("/api/task")
+@Tag(name = "定时任务测试", description = "手动触发定时任务进行测试")
+public class TaskTestController {
+
+    @Autowired
+    private ReservationExpireTask reservationExpireTask;
+
+    @Autowired
+    private TransferDelayCheckTask transferDelayCheckTask;
+
+    @Autowired
+    private InventoryBalanceTask inventoryBalanceTask;
+
+    @Autowired
+    private ReservationWarningTask reservationWarningTask;
+
+    //手动触发预约超期释放任务
+    @PostMapping("/trigger/reservation-expire")
+    @Operation(summary = "触发预约超期释放任务", description = "手动执行预约超期释放定时任务，检查并处理超期未取的预留记录")
+    public Result<String> triggerReservationExpire() {
+        log.info("手动触发预约超期释放任务");
+        try {
+            reservationExpireTask.releaseExpiredReservations();
+            return Result.success("预约超期释放任务执行成功");
+        } catch (Exception e) {
+            log.error("预约超期释放任务执行失败", e);
+            return Result.fail("任务执行失败：" + e.getMessage());
+        }
+    }
+
+    //手动触发调拨延迟检查任务
+    @PostMapping("/trigger/transfer-delay-check")
+    @Operation(summary = "触发调拨延迟检查任务", description = "手动执行调拨延迟检查定时任务，检查并告警延迟的调拨记录")
+    public Result<String> triggerTransferDelayCheck() {
+        log.info("手动触发调拨延迟检查任务");
+        try {
+            transferDelayCheckTask.checkTransferDelay();
+            return Result.success("调拨延迟检查任务执行成功");
+        } catch (Exception e) {
+            log.error("调拨延迟检查任务执行失败", e);
+            return Result.fail("任务执行失败：" + e.getMessage());
+        }
+    }
+
+    //手动触发库存平衡任务
+    @PostMapping("/trigger/inventory-balance")
+    @Operation(summary = "触发库存平衡任务", description = "手动执行库存平衡定时任务，检查并生成库存平衡调拨建议")
+    public Result<String> triggerInventoryBalance() {
+        log.info("手动触发库存平衡任务");
+        try {
+            inventoryBalanceTask.executeInventoryBalance();
+            return Result.success("库存平衡任务执行成功");
+        } catch (Exception e) {
+            log.error("库存平衡任务执行失败", e);
+            return Result.fail("任务执行失败：" + e.getMessage());
+        }
+    }
+
+    //手动触发预约提醒任务
+    @PostMapping("/trigger/reservation-warning")
+    @Operation(summary = "触发预约提醒任务", description = "手动执行预约提醒定时任务，发送预约即将到期提醒")
+    public Result<String> triggerReservationWarning() {
+        log.info("手动触发预约提醒任务");
+        try {
+            reservationWarningTask.sendReservationWarning();
+            return Result.success("预约提醒任务执行成功");
+        } catch (Exception e) {
+            log.error("预约提醒任务执行失败", e);
+            return Result.fail("任务执行失败：" + e.getMessage());
+        }
+    }
+}

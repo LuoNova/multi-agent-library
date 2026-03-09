@@ -48,37 +48,55 @@ public class TransferService {
     @Transactional
     //创建调拨记录（原有方法，保持向后兼容）
     public Long createTransfer(Long copyId, Long fromLibraryId, Long toLibraryId, Long reservationId) {
-        return createTransfer(copyId, fromLibraryId, toLibraryId, reservationId, "USER_REQUEST", null, null);
+        return createTransfer(copyId, fromLibraryId, toLibraryId, reservationId, "USER_REQUEST", null, null, null);
+    }
+
+    //创建调拨记录(用户请求场景,写入接收用户ID便于查询个人调拨列表)
+    public Long createTransfer(Long copyId, Long fromLibraryId, Long toLibraryId, Long reservationId, Long receiverUserId) {
+        return createTransfer(copyId, fromLibraryId, toLibraryId, reservationId, "USER_REQUEST", null, null, receiverUserId);
     }
 
     //创建调拨记录（增强方法，支持指定调拨原因）
     public Long createTransfer(Long copyId, Long fromLibraryId, Long toLibraryId, Long reservationId,
                                String transferReason, Long suggestionId) {
-        return createTransfer(copyId, fromLibraryId, toLibraryId, reservationId, transferReason, suggestionId, null);
+        return createTransfer(copyId, fromLibraryId, toLibraryId, reservationId, transferReason, suggestionId, null, null);
     }
 
     //创建调拨记录（完整方法，支持指定调拨原因、建议ID和调拨单ID）
     public Long createTransfer(Long copyId, Long fromLibraryId, Long toLibraryId, Long reservationId,
                                String transferReason, Long suggestionId, Long orderId) {
+        return createTransfer(copyId, fromLibraryId, toLibraryId, reservationId, transferReason, suggestionId, orderId, null);
+    }
+
+    //创建调拨记录（完整方法，支持指定调拨原因、建议ID、调拨单ID和接收用户ID）
+    public Long createTransfer(Long copyId, Long fromLibraryId, Long toLibraryId, Long reservationId,
+                               String transferReason, Long suggestionId, Long orderId, Long receiverUserId) {
         log.info("创建调拨记录：副本{}从馆{}到馆{}，关联预约{}，调拨原因{}，建议ID{}，调拨单ID{}",
                 copyId, fromLibraryId, toLibraryId, reservationId, transferReason, suggestionId, orderId);
 
         BookTransfer transfer = new BookTransfer();
+        LocalDateTime now = LocalDateTime.now();
         transfer.setCopyId(copyId);
         transfer.setFromLibraryId(fromLibraryId);
         transfer.setToLibraryId(toLibraryId);
         transfer.setStatus(LibraryConstants.TRANSFER_STATUS_IN_TRANSIT);
-        transfer.setRequestTime(LocalDateTime.now());
-        //预计30分钟后到达（用于定时任务自动完成）
-        transfer.setCompleteTime(LocalDateTime.now().plusMinutes(
+        transfer.setRequestTime(now);
+        //预计到达时间用于进度计算与延迟检测
+        transfer.setEstimatedArrivalTime(now.plusMinutes(
                 businessRulesProperties.getTransfer().getEstimatedMinutes()));
         //设置调拨原因、建议ID和调拨单ID
         transfer.setTransferReason(transferReason);
         transfer.setSuggestionId(suggestionId);
         transfer.setOrderId(orderId);
+        transfer.setReceiverUserId(receiverUserId);
 
         transferMapper.insert(transfer);
         log.info("调拨记录创建成功：{}", transfer.getId());
+
+        //用户请求调拨可发送发起通知(库存平衡调拨不发送)
+        if (receiverUserId != null) {
+            notificationService.sendTransferInitiatedNotification(transfer.getId(), receiverUserId);
+        }
 
         return transfer.getId();
     }
@@ -86,8 +104,8 @@ public class TransferService {
     //调拨完成回调（核心方法）
     //由物流系统、定时任务或馆员确认调用，完成调拨闭环
     @Transactional
-    public TransferCompleteResult completeTransfer(Long transferId, LocalDateTime actualArriveTime) {
-        log.info("处理调拨完成回调：transferId={}, 实际到达时间={}", transferId, actualArriveTime);
+    public TransferCompleteResult completeTransfer(Long transferId) {
+        log.info("处理调拨完成回调：transferId={}", transferId);
 
         //1.校验调拨记录
         BookTransfer transfer = transferMapper.selectById(transferId);
@@ -104,7 +122,10 @@ public class TransferService {
 
         //2.更新调拨单状态为已完成
         transfer.setStatus(LibraryConstants.TRANSFER_STATUS_COMPLETED);
-        transfer.setCompleteTime(actualArriveTime != null ? actualArriveTime : LocalDateTime.now());
+        LocalDateTime arriveTime = LocalDateTime.now();
+        //completeTime用于记录业务完成时间，actualArrivalTime用于进度展示
+        transfer.setCompleteTime(arriveTime);
+        transfer.setActualArrivalTime(arriveTime);
         transferMapper.updateById(transfer);
         log.info("调拨单{}状态更新为COMPLETED", transferId);
 
@@ -182,6 +203,8 @@ public class TransferService {
             existingBorrow.setStatus(LibraryConstants.BORROW_STATUS_RESERVED);
             existingBorrow.setReservedTime(LocalDateTime.now()); // 预留开始时间
             existingBorrow.setPickupDeadline(expireTime); // 取书截止时间
+            //dueTime不能为空，用于承载预留到期时间（取书后会改为30天应还期）
+            existingBorrow.setDueTime(expireTime);
             existingBorrow.setPickupLibraryId(transfer.getToLibraryId()); // 取书馆ID
             bookBorrowMapper.updateById(existingBorrow);
             borrowId = existingBorrow.getId();
@@ -196,6 +219,8 @@ public class TransferService {
             newBorrow.setBorrowTime(LocalDateTime.now());
             newBorrow.setReservedTime(LocalDateTime.now()); // 预留开始时间
             newBorrow.setPickupDeadline(expireTime); // 取书截止时间
+            //dueTime不能为空，用于承载预留到期时间（取书后会改为30天应还期）
+            newBorrow.setDueTime(expireTime);
             newBorrow.setPickupLibraryId(transfer.getToLibraryId()); // 取书馆ID
             newBorrow.setStatus(LibraryConstants.BORROW_STATUS_RESERVED);
             bookBorrowMapper.insert(newBorrow);
@@ -214,6 +239,8 @@ public class TransferService {
         //7.发送取书通知
         log.info("发送通知给用户{}：图书已到达馆{}-{}，请在24小时内取书",
                 reservatorId, transfer.getToLibraryId(), copy.getLocation());
+        //仅对用户请求调拨发送通知，库存平衡调拨不发送
+        notificationService.sendTransferArrivedNotification(transferId, reservatorId);
 
         return TransferCompleteResult.success(
                 "调拨完成，图书已预留给用户" + reservatorId,
@@ -249,8 +276,8 @@ public class TransferService {
 
     //批量调拨完成方法
     @Transactional
-    public BatchCompleteResult completeBatchTransfer(Long orderId, LocalDateTime actualArriveTime) {
-        log.info("处理批量调拨完成回调：orderId={}, 实际到达时间={}", orderId, actualArriveTime);
+    public BatchCompleteResult completeBatchTransfer(Long orderId) {
+        log.info("处理批量调拨完成回调：orderId={}", orderId);
 
         //1.校验调拨单
         TransferOrder order = orderMapper.selectById(orderId);
@@ -280,7 +307,7 @@ public class TransferService {
         log.info("找到{}条运输中的调拨记录", transfers.size());
 
         //3.批量更新调拨记录状态
-        LocalDateTime completeTime = actualArriveTime != null ? actualArriveTime : LocalDateTime.now();
+        LocalDateTime completeTime = LocalDateTime.now();
         int successCount = 0;
 
         for (BookTransfer transfer : transfers) {

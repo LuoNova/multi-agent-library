@@ -79,17 +79,8 @@ public class TransferProgressController {
             @RequestParam(defaultValue = "10") int size) {
         
         log.info("查询用户调拨列表: userId={}, status={}, page={}, size={}", userId, status, page, size);
-        
-        //TODO: 实现用户调拨列表查询
-        //需要关联BookBorrow表,找到用户相关的调拨记录
-        
-        //暂时返回空列表
-        Map<String, Object> result = new HashMap<>();
-        result.put("total", 0);
-        result.put("page", page);
-        result.put("size", size);
-        result.put("records", List.of());
-        
+
+        Map<String, Object> result = progressService.getUserTransfers(userId, status, page, size);
         return Result.success("查询成功", result);
     }
 

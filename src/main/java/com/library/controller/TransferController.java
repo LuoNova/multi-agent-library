@@ -13,8 +13,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
-import java.time.LocalDateTime;
-
 //调拨履约接口控制器
 //提供调拨完成回调接口，供物流系统或管理后台调用
 @Slf4j
@@ -32,14 +30,10 @@ public class TransferController {
             @Parameter(description = "调拨完成请求", required = true)
             @RequestBody TransferCompleteRequest request) {
 
-        log.info("收到调拨完成请求：transferId={}, 到达时间={}",
-                request.getTransferId(), request.getActualArriveTime());
+        log.info("收到调拨完成请求：transferId={}", request.getTransferId());
 
-        TransferCompleteResult result = transferService.completeTransfer(
-                request.getTransferId(),
-                request.getActualArriveTime()
-        );
-        
+        TransferCompleteResult result = transferService.completeTransfer(request.getTransferId());
+
         if (result.isSuccess()) {
             return Result.success(result.getMessage(), result);
         } else {
@@ -53,9 +47,6 @@ public class TransferController {
     public static class TransferCompleteRequest {
         @Schema(description = "调拨单ID", example = "20", required = true)
         private Long transferId;
-
-        @Schema(description = "实际到达时间（可选，默认为当前时间）", example = "2024-01-15T14:30:00")
-        private LocalDateTime actualArriveTime;
     }
 
     //批量调拨完成接口
@@ -65,13 +56,9 @@ public class TransferController {
             @Parameter(description = "批量调拨完成请求", required = true)
             @RequestBody BatchCompleteRequest request) {
 
-        log.info("收到批量调拨完成请求：orderId={}, 到达时间={}",
-                request.getOrderId(), request.getActualArriveTime());
+        log.info("收到批量调拨完成请求：orderId={}", request.getOrderId());
 
-        BatchCompleteResult result = transferService.completeBatchTransfer(
-                request.getOrderId(),
-                request.getActualArriveTime()
-        );
+        BatchCompleteResult result = transferService.completeBatchTransfer(request.getOrderId());
 
         if (result.isSuccess()) {
             return Result.success(result.getMessage(), result);
@@ -86,8 +73,5 @@ public class TransferController {
     public static class BatchCompleteRequest {
         @Schema(description = "调拨单ID", example = "1", required = true)
         private Long orderId;
-
-        @Schema(description = "实际到达时间（可选，默认为当前时间）", example = "2024-01-15T14:30:00")
-        private LocalDateTime actualArriveTime;
     }
 }

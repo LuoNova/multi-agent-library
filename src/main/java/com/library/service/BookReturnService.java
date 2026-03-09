@@ -2,6 +2,7 @@ package com.library.service;
 
 import com.library.constant.LibraryConstants;
 import com.library.entity.*;
+import com.library.exception.BusinessException;
 import com.library.mapper.*;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
@@ -36,6 +37,12 @@ public class BookReturnService {
 
     @Autowired
     private BookTransferMapper bookTransferMapper;
+
+    @Autowired
+    private TransferService transferService;
+
+    @Autowired
+    private BookCopyService bookCopyService;
 
     //核心方法：执行还书（包含预约检查与自动兑现）
     @Transactional
@@ -173,23 +180,30 @@ public class BookReturnService {
 
         //TODO: 发送通知给预约者（短信/邮件/微信/站内信），告知"您预约的《书名》已到位，请在24小时内到馆取书"
 
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime expireTime = now.plusHours(RESERVE_HOURS);
+
         //1. 更新副本为预留状态（不再开放借阅）
         copy.setStatus(LibraryConstants.COPY_STATUS_RESERVED);
-        copy.setUpdateTime(LocalDateTime.now());
+        copy.setUpdateTime(now);
         bookCopyMapper.updateById(copy);
 
         //2. 更新预约记录为已满足
         reservation.setStatus(LibraryConstants.RESERVATION_STATUS_FULFILLED);
         reservation.setCopyId(copy.getId());
-        reservation.setFulfillTime(LocalDateTime.now());
+        reservation.setFulfillTime(now);
         bookReservationMapper.updateById(reservation);
 
         //3. 为预约者创建借阅记录（状态为RESERVED，24小时内有效）
         BookBorrow newBorrow = new BookBorrow();
         newBorrow.setCopyId(copy.getId());
         newBorrow.setUserId(reservatorId);
-        newBorrow.setBorrowTime(LocalDateTime.now());
-        newBorrow.setDueTime(LocalDateTime.now().plusHours(RESERVE_HOURS));
+        newBorrow.setBorrowTime(now);
+        //预留阶段使用dueTime承载预留到期时间，取书确认后会覆盖为30天应还期
+        newBorrow.setDueTime(expireTime);
+        newBorrow.setReservedTime(now);
+        newBorrow.setPickupDeadline(expireTime);
+        newBorrow.setPickupLibraryId(libraryId);
         newBorrow.setStatus(LibraryConstants.BORROW_STATUS_RESERVED);
         bookBorrowMapper.insert(newBorrow);
 
@@ -211,7 +225,7 @@ public class BookReturnService {
                 reservatorId,
                 true,
                 reservation.getId(),
-                LocalDateTime.now().plusHours(RESERVE_HOURS)
+                expireTime
         );
     }
 
@@ -223,54 +237,36 @@ public class BookReturnService {
 
         //TODO: 发送通知给预约者（短信/邮件/微信/站内信），告知"您预约的《书名》已到位，请在24小时内到馆取书"
 
-        //1. 创建调拨记录（运输中）
-        BookTransfer transfer = new BookTransfer();
-        transfer.setCopyId(copy.getId());
-        transfer.setFromLibraryId(fromLibraryId);
-        transfer.setToLibraryId(toLibraryId);
-        transfer.setStatus(LibraryConstants.TRANSFER_STATUS_IN_TRANSIT);
-        transfer.setRequestTime(LocalDateTime.now());
-        //预计到达时间（假设30分钟运输时间）
-        //transfer.setEstimatedArrival(LocalDateTime.now().plusMinutes(30));
-        bookTransferMapper.insert(transfer);
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime reserveExpireTime = now.plusHours(RESERVE_HOURS);
 
-        //2. 更新副本为预留状态（权属已归预约者，但物理位置还在原馆，即将运输）
-        //注意：虽然物理还在fromLibraryId，但status改为RESERVED表示已被占用
-        copy.setStatus(LibraryConstants.COPY_STATUS_RESERVED);
-        copy.setUpdateTime(LocalDateTime.now());
-        bookCopyMapper.updateById(copy);
-
-        //3. 更新预约记录为已满足（已分配副本，但在途）
+        //1. 更新预约记录为已满足（已分配副本，但在途）
         reservation.setStatus(LibraryConstants.RESERVATION_STATUS_FULFILLED);
         reservation.setCopyId(copy.getId());
-        reservation.setFulfillTime(LocalDateTime.now());
+        reservation.setFulfillTime(now);
         bookReservationMapper.updateById(reservation);
 
-        //4. 调整库存统计：
-        //原馆（还书馆）库存-1（因为书被调走了，虽然还没运走，但权属已转移）
-        LibraryBiblioStats fromStats = statsMapper.selectByLibraryAndBiblio(fromLibraryId, copy.getBiblioId());
-        if (fromStats != null) {
-            fromStats.setStockCount(fromStats.getStockCount() - 1);
-            statsMapper.updateById(fromStats);
+        //2. 创建调拨记录（统一走TransferService，确保estimatedArrivalTime写入）
+        //写入接收用户ID,用于用户调拨列表查询
+        Long transferId = transferService.createTransfer(copy.getId(), fromLibraryId, toLibraryId, reservation.getId(), reservatorId);
+
+        //3. 执行调拨（更新副本状态为IN_TRANSIT，源馆库存-1，目标馆库存等到货后再加）
+        boolean success = bookCopyService.executeTransfer(copy.getId(), fromLibraryId, toLibraryId, copy.getBiblioId());
+        if (!success) {
+            //调拨执行失败需要回滚事务，避免预约状态已FULFILLED但未真正发货
+            throw new BusinessException("跨馆调拨执行失败（副本状态异常或并发冲突）");
         }
 
-        //目标馆（预约者馆）库存+1（虽然书还没到，但为了统计一致性，先加？或者等调拨完成再加？）
-        //建议：等调拨完成（到货）后再加，避免虚高。但这里为了简化，先不加，保持原样。
-        //或者添加"在途库存"概念（复杂，暂不实现）
-
-        //5. 注意：此时不创建tb_book_borrow记录（等调拨完成到货后，用户实际取书时再创建）
-        //或者可以创建，但状态特殊？目前按业务逻辑，调拨完成后用户收到通知，取书时才创建正式借阅。
-
-        log.info("跨馆调拨预约兑现完成，调拨单ID：{}，预计30分钟到达馆{}",
-                transfer.getId(), toLibraryId);
+        log.info("跨馆调拨预约兑现完成，调拨单ID：{}，预计到达时间:{}",
+                transferId, now.plusMinutes(TRANSFER_MINUTES));
 
         //修改为增强版构造方法，添加reservationId、transferId和过期时间
         return ReturnResult.successWithTransfer(
                 "还书成功，已触发向预约用户指定馆的调拨（预计30分钟到达）",
                 reservatorId,
                 reservation.getId(),
-                transfer.getId(),
-                LocalDateTime.now().plusHours(RESERVE_HOURS)
+                transferId,
+                reserveExpireTime
         );
     }
 

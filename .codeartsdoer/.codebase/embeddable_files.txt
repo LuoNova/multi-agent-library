@@ -19,6 +19,7 @@ src/main/java/com/library/mapper/TransferSuggestionMapper.java
 src/main/java/com/library/entity/RepairTicket.java
 src/main/java/com/library/mapper/EquipmentMapper.java
 src/main/java/com/library/controller/TransferController.java
+src/main/java/com/library/controller/TaskTestController.java
 src/main/java/com/library/config/OpenApiConfig.java
 src/main/java/com/library/entity/BookTransfer.java
 src/main/java/com/library/mapper/SeatReservationMapper.java
@@ -38,9 +39,8 @@ src/main/java/com/library/service/impl/PickupServiceImpl.java
 src/main/java/com/library/dto/TransferProgressDTO.java
 src/main/java/com/library/agent/dto/TaskResultHolder.java
 src/main/java/com/library/util/ExceptionHandler.java
-src/main/java/com/library/service/TransferProgressService.java
-src/main/java/com/library/service/BookTransferService.java
 src/main/java/com/library/util/RetryTemplate.java
+src/main/java/com/library/service/BookTransferService.java
 src/main/java/com/library/mapper/NotificationMapper.java
 src/main/java/com/library/exception/GlobalExceptionHandler.java
 src/main/java/com/library/service/impl/NotificationServiceImpl.java
@@ -57,14 +57,13 @@ src/main/java/com/library/mapper/LibraryBiblioStatsMapper.java
 src/main/java/com/library/task/ReservationWarningTask.java
 src/main/java/com/library/controller/TestController.java
 src/test/java/com/library/MultiAgentLibraryApplicationTests.java
-src/main/java/com/library/mapper/BookReservationMapper.java
 src/main/java/com/library/controller/TransferSuggestionController.java
+src/main/java/com/library/mapper/BookReservationMapper.java
 src/main/java/com/library/task/TransferDelayCheckTask.java
 src/main/java/com/library/service/TransferNotificationService.java
 src/main/java/com/library/service/BookBorrowService.java
 src/main/java/com/library/config/RabbitMQConfig.java
 src/main/java/com/library/consumer/NotificationConsumer.java
-src/main/java/com/library/service/TransferService.java
 src/main/java/com/library/mapper/SeatMapper.java
 src/main/java/com/library/controller/ReturnController.java
 src/main/java/com/library/dto/PickupConfirmResponse.java
@@ -84,10 +83,11 @@ src/main/java/com/library/agent/InventoryBalanceAgent.java
 src/main/java/com/library/mapper/UserMapper.java
 src/main/java/com/library/entity/SeatArea.java
 src/main/java/com/library/controller/BorrowController.java
-src/main/java/com/library/entity/BookReservation.java
 src/main/java/com/library/util/DistributedLock.java
+src/main/java/com/library/entity/BookReservation.java
 src/main/java/com/library/constant/LibraryConstants.java
 src/main/java/com/library/service/impl/NotificationTemplateServiceImpl.java
 src/main/java/com/library/mapper/BookTransferMapper.java
 src/main/java/com/library/entity/NegotiationLog.java
 src/main/java/com/library/entity/Equipment.java
+src/main/java/com/library/service/ReservationFulfillmentService.java

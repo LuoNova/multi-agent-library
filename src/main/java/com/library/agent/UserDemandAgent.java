@@ -297,7 +297,8 @@ public class UserDemandAgent extends Agent {
                 Long copyId = Long.valueOf(proposal.getProposal().get("copyId").toString());
 
                 //1.创建调拨记录（状态IN_TRANSIT）
-                Long transferId = transferService.createTransfer(copyId, fromLibraryId, userLibraryId, null);
+                //写入接收用户ID,用于用户调拨列表查询
+                Long transferId = transferService.createTransfer(copyId, fromLibraryId, userLibraryId, null, userId);
 
                 //2.执行调拨（更新副本状态为IN_TRANSIT，库存调整）
                 boolean success = bookCopyService.executeTransfer(copyId, fromLibraryId, userLibraryId, biblioId);

@@ -51,6 +51,9 @@ public class BookTransfer {
     //关联的调拨单ID
     private Long orderId;
 
+    //接收用户ID(用户请求/预约兑现时填写,库存平衡为空)
+    private Long receiverUserId;
+
     //操作人ID
     private Long operatorId;
 }

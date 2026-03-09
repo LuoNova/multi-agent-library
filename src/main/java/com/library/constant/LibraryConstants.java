@@ -22,6 +22,7 @@ public class LibraryConstants {
     public static final String BORROW_STATUS_RESERVED = "RESERVED";    //已预留（等待取书，24小时有效）
     public static final String BORROW_STATUS_BORROWING = "BORROWING";  //借阅中
     public static final String BORROW_STATUS_RETURNED = "RETURNED";    //已归还
+    public static final String BORROW_STATUS_CANCELLED = "CANCELLED";  //已取消（预留超期释放等场景）
 
     //预约状态
     public static final String RESERVATION_STATUS_PENDING = "PENDING";

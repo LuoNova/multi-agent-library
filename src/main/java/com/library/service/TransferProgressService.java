@@ -1,6 +1,7 @@
 package com.library.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.library.dto.BatchTransferProgressDTO;
 import com.library.dto.TransferProgressDTO;
 import com.library.entity.*;
@@ -13,6 +14,7 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 //调拨进度服务
@@ -64,14 +66,29 @@ public class TransferProgressService {
     }
 
     //查询用户调拨列表
-    public List<TransferProgressDTO> getUserTransfers(Long userId, String status, int page, int size) {
+    public Map<String, Object> getUserTransfers(Long userId, String status, int page, int size) {
         log.info("查询用户调拨列表: userId={}, status={}, page={}, size={}", userId, status, page, size);
-        
-        //TODO: 需要根据用户ID查询相关的调拨记录
-        //这里需要关联BookBorrow表,找到用户相关的调拨
-        //暂时返回空列表,后续完善
-        
-        return new ArrayList<>();
+
+        LambdaQueryWrapper<BookTransfer> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(BookTransfer::getReceiverUserId, userId);
+        if (status != null && !status.isEmpty()) {
+            wrapper.eq(BookTransfer::getStatus, status);
+        }
+        wrapper.orderByDesc(BookTransfer::getRequestTime);
+
+        Page<BookTransfer> pageObj = new Page<>(page, size);
+        Page<BookTransfer> result = transferMapper.selectPage(pageObj, wrapper);
+
+        List<TransferProgressDTO> records = result.getRecords().stream()
+                .map(this::buildTransferProgressDTO)
+                .collect(Collectors.toList());
+
+        return Map.of(
+                "total", result.getTotal(),
+                "page", page,
+                "size", size,
+                "records", records
+        );
     }
 
     //构建单个调拨进度DTO
@@ -285,6 +302,8 @@ public class TransferProgressService {
         switch (status) {
             case "PENDING":
                 return "待处理";
+            case "IN_PROGRESS":
+                return "执行中";
             case "IN_TRANSIT":
                 return "运输中";
             case "COMPLETED":
