@@ -96,5 +96,23 @@ public class SeatController {
             return Result.fail("创建座位预约失败:" + e.getMessage());
         }
     }
+
+    @PostMapping("/reservation/cancel")
+    @Operation(summary = "取消座位预约", description = "用户主动取消预约,座位置回可用")
+    public Result<Void> cancelReservation(
+            @Parameter(description = "预约记录ID", required = true) @RequestParam Long reservationId,
+            @Parameter(description = "用户ID(校验本人)", required = true) @RequestParam Long userId) {
+        try {
+            log.info("取消座位预约: reservationId={}, userId={}", reservationId, userId);
+            seatReservationService.cancelReservation(reservationId, userId);
+            return Result.success("取消成功", null);
+        } catch (IllegalArgumentException e) {
+            log.warn("取消座位预约失败: {}", e.getMessage());
+            return Result.fail(400, e.getMessage());
+        } catch (Exception e) {
+            log.error("取消座位预约异常", e);
+            return Result.fail("取消座位预约失败:" + e.getMessage());
+        }
+    }
 }
 

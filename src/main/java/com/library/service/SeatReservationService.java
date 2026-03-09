@@ -212,4 +212,23 @@ public class SeatReservationService {
         dto.setSource(entity.getSource());
         return dto;
     }
+
+    //取消座位预约(仅限本人、仅限ACTIVE状态)
+    @Transactional(rollbackFor = Exception.class)
+    public void cancelReservation(Long reservationId, Long userId) {
+        SeatReservation reservation = seatReservationMapper.selectById(reservationId);
+        if (reservation == null) {
+            throw new IllegalArgumentException("预约不存在");
+        }
+        if (!"ACTIVE".equals(reservation.getStatus())) {
+            throw new IllegalArgumentException("预约已取消或已结束,无法取消");
+        }
+        if (!reservation.getUserId().equals(userId)) {
+            throw new IllegalArgumentException("只能取消本人的预约");
+        }
+        reservation.setStatus("CANCELED");
+        seatReservationMapper.updateById(reservation);
+        seatMapper.updateStatus(reservation.getSeatId(), "AVAILABLE");
+        log.info("取消座位预约成功: reservationId={}, userId={}, seatId={}", reservationId, userId, reservation.getSeatId());
+    }
 }
