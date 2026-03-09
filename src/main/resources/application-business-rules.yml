@@ -23,3 +23,30 @@ library:
     credit:
       daily-deduction: 2                #借书逾期每日扣分
       ceiling-deduction: 20             #借书逾期上限扣分
+
+    #座位相关规则
+    seat:
+      # 单次预约最小时长（分钟）
+      min-duration-minutes: 60
+      # 单次预约最大时长（分钟）
+      max-duration-minutes: 840
+      # 预约时段步长（分钟），如 120 表示只能约 10:00-12:00、12:00-14:00
+      slot-step-minutes: 60
+      # 最早可预约日期（相对今天的天数），如 0 表示仅当天
+      earliest-booking-days: 0
+      # 最晚可预约日期（相对今天的天数），如 7 表示最多约到 7 天后
+      latest-booking-days: 2
+      # 未签到多少分钟后视为 NO_SHOW 并释放座位
+      no-show-after-minutes: 30
+      # 默认暂离允许时长（分钟）
+      temp-leave-default-minutes: 30
+      # 中午饭点暂离规则
+      temp-leave-lunch:
+        start: "11:30"
+        end: "13:30"
+        max-minutes: 120
+      # 晚饭时间暂离规则
+      temp-leave-dinner:
+        start: "17:00"
+        end: "19:00"
+        max-minutes: 120

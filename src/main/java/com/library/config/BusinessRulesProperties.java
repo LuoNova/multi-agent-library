@@ -22,6 +22,9 @@ public class BusinessRulesProperties {
     //信用规则
     private CreditRules credit = new CreditRules();
 
+    //座位规则
+    private SeatRules seat = new SeatRules();
+
     @Data
     public static class BorrowRules {
         //最大借阅数量
@@ -54,5 +57,37 @@ public class BusinessRulesProperties {
         private int dailyDeduction = 2;
         //借书逾期上限扣分
         private int ceilingDeduction = 20;
+    }
+
+    @Data
+    public static class SeatRules {
+        //单次预约最小时长（分钟）
+        private int minDurationMinutes = 60;
+        //单次预约最大时长（分钟）
+        private int maxDurationMinutes = 840;
+        //预约时段步长（分钟）
+        private int slotStepMinutes = 60;
+        //最早可预约日期（相对今天的天数）
+        private int earliestBookingDays = 0;
+        //最晚可预约日期（相对今天的天数）
+        private int latestBookingDays = 2;
+        //未签到多少分钟后视为 NO_SHOW
+        private int noShowAfterMinutes = 30;
+        //默认暂离允许时长（分钟）
+        private int tempLeaveDefaultMinutes = 30;
+        //中午饭点暂离规则
+        private TempLeaveRule tempLeaveLunch = new TempLeaveRule();
+        //晚饭时间暂离规则
+        private TempLeaveRule tempLeaveDinner = new TempLeaveRule();
+    }
+
+    @Data
+    public static class TempLeaveRule {
+        //开始时间(如11:30)
+        private String start;
+        //结束时间(如13:30)
+        private String end;
+        //最大暂离分钟数
+        private int maxMinutes = 120;
     }
 }

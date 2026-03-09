@@ -39,4 +39,13 @@ public class SeatReservation {
 
     //创建时间
     private LocalDateTime createTime;
+
+    //所属馆ID(冗余)
+    private Long libraryId;
+
+    //关联借阅ID(借书/取书推荐预约时填写)
+    private Long borrowId;
+
+    //预约来源:WALK_IN/BORROW_PICKUP
+    private String source;
 }

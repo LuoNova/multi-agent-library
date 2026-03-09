@@ -116,7 +116,6 @@ public class UserDemandAgent extends Agent {
                     result.put("libraryId", userLibraryId);
                     result.put("copyId", copyId);
                     result.put("message", "借书成功，请在" + BORROW_DAYS + "天内归还");
-                    //TODO: 预留座位功能（Phase 2）
 
                     String resultJson = mapper.writeValueAsString(result);
                     taskManager.completeTask(taskId, resultJson);
