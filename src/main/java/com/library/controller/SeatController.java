@@ -2,7 +2,10 @@ package com.library.controller;
 
 import com.library.common.Result;
 import com.library.dto.SeatAvailabilityResultDTO;
+import com.library.dto.SeatReservationCreateRequest;
+import com.library.dto.SeatReservationResultDTO;
 import com.library.service.SeatAvailabilityService;
+import com.library.service.SeatReservationService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -11,6 +14,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -22,11 +27,14 @@ import java.time.LocalTime;
 @Slf4j
 @RestController
 @RequestMapping("/api/seat")
-@Tag(name = "座位管理", description = "座位可用性查询与动态分配")
+@Tag(name = "座位管理", description = "座位可用性查询与动态分配、创建预约")
 public class SeatController {
 
     @Autowired
     private SeatAvailabilityService seatAvailabilityService;
+
+    @Autowired
+    private SeatReservationService seatReservationService;
 
     @GetMapping("/available")
     @Operation(summary = "查询可用座位/自动分配", description = "根据馆、日期、时间段等条件查询可用座位列表或自动分配一个推荐座位")
@@ -66,6 +74,26 @@ public class SeatController {
         } catch (Exception e) {
             log.error("查询可用座位异常", e);
             return Result.fail("查询可用座位失败:" + e.getMessage());
+        }
+    }
+
+    @PostMapping("/reservation")
+    @Operation(summary = "创建座位预约", description = "选定座位与时间段后创建预约并占用座位")
+    public Result<SeatReservationResultDTO> createReservation(
+            @Parameter(description = "创建预约请求体", required = true)
+            @RequestBody SeatReservationCreateRequest request) {
+        try {
+            log.info("创建座位预约: userId={}, seatId={}, libraryId={}, date={}, {}~{}",
+                    request.getUserId(), request.getSeatId(), request.getLibraryId(),
+                    request.getReservationDate(), request.getStartTime(), request.getEndTime());
+            SeatReservationResultDTO dto = seatReservationService.createReservation(request);
+            return Result.success("座位预约创建成功", dto);
+        } catch (IllegalArgumentException e) {
+            log.warn("创建座位预约参数或业务校验失败: {}", e.getMessage());
+            return Result.fail(400, e.getMessage());
+        } catch (Exception e) {
+            log.error("创建座位预约异常", e);
+            return Result.fail("创建座位预约失败:" + e.getMessage());
         }
     }
 }
