@@ -20,6 +20,7 @@ import jade.lang.acl.ACLMessage;
 import jade.lang.acl.MessageTemplate;
 import lombok.extern.slf4j.Slf4j;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -99,14 +100,14 @@ public class UserDemandAgent extends Agent {
             //步骤2：检查目标馆是否有可用库存
             List<com.library.entity.BookCopy> localCopies = bookCopyService.getAvailableCopies(userLibraryId, biblioId);
 
-            if (!localCopies.isEmpty()) {
+                if (!localCopies.isEmpty()) {
                 //场景A：本馆有书 -> 直接借书
                 log.info("[{}] 本馆有库存，执行直接借书", taskId);
 
                 Long copyId = localCopies.get(0).getId();
                 boolean success = bookBorrowService.directBorrow(userId, copyId, biblioId);
 
-                if (success) {
+                    if (success) {
                     userService.incrementBorrowCount(userId);
 
                     Map<String, Object> result = new HashMap<>();
@@ -116,6 +117,11 @@ public class UserDemandAgent extends Agent {
                     result.put("libraryId", userLibraryId);
                     result.put("copyId", copyId);
                     result.put("message", "借书成功，请在" + BORROW_DAYS + "天内归还");
+                    //座位推荐相关字段:本地借阅默认推荐在当前馆当天占座
+                    result.put("recommendSeatLibraryId", userLibraryId);
+                    result.put("recommendSeatDate", LocalDate.now().toString());
+                    result.put("recommendSeatReason", "LOCAL_LOAN");
+                    result.put("actionRecommendSeat", true);
 
                     String resultJson = mapper.writeValueAsString(result);
                     taskManager.completeTask(taskId, resultJson);

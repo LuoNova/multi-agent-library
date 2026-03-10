@@ -5,6 +5,7 @@ import com.library.task.ReservationExpireTask;
 import com.library.task.TransferDelayCheckTask;
 import com.library.task.InventoryBalanceTask;
 import com.library.task.ReservationWarningTask;
+import com.library.task.SeatTempLeaveTask;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.extern.slf4j.Slf4j;
@@ -32,6 +33,9 @@ public class TaskTestController {
 
     @Autowired
     private ReservationWarningTask reservationWarningTask;
+
+    @Autowired
+    private SeatTempLeaveTask seatTempLeaveTask;
 
     //手动触发预约超期释放任务
     @PostMapping("/trigger/reservation-expire")
@@ -85,6 +89,20 @@ public class TaskTestController {
             return Result.success("预约提醒任务执行成功");
         } catch (Exception e) {
             log.error("预约提醒任务执行失败", e);
+            return Result.fail("任务执行失败：" + e.getMessage());
+        }
+    }
+
+    //手动触发座位暂离处理任务
+    @PostMapping("/trigger/seat-temp-leave")
+    @Operation(summary = "触发座位暂离处理任务", description = "手动执行座位暂离处理任务,对暂离超时进行提醒和结束使用")
+    public Result<String> triggerSeatTempLeave() {
+        log.info("手动触发座位暂离处理任务");
+        try {
+            seatTempLeaveTask.processTempLeave();
+            return Result.success("座位暂离处理任务执行成功");
+        } catch (Exception e) {
+            log.error("座位暂离处理任务执行失败", e);
             return Result.fail("任务执行失败：" + e.getMessage());
         }
     }

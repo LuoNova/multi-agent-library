@@ -48,4 +48,16 @@ public class SeatReservation {
 
     //预约来源:WALK_IN/BORROW_PICKUP
     private String source;
+
+    //最近一次暂离开始时间
+    private LocalDateTime tempLeaveStartTime;
+
+    //本次暂离基础允许时长截止时间
+    private LocalDateTime tempLeaveDeadline;
+
+    //本次暂离强制结束时间(基础截止时间+30分钟)
+    private LocalDateTime tempLeaveForceDeadline;
+
+    //暂离状态:NONE/IN_TEMP_LEAVE/TIMEOUT_WARNED/ENDED
+    private String tempLeaveStatus;
 }

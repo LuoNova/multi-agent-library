@@ -103,6 +103,11 @@ public class PickupServiceImpl implements PickupService {
             Library library = libraryMapper.selectById(borrow.getPickupLibraryId());
             if (library != null) {
                 response.setLibraryName(library.getName());
+                //取书成功场景:推荐在取书馆当天占座
+                response.setRecommendSeatLibraryId(library.getId());
+                response.setRecommendSeatDate(now.toLocalDate().toString());
+                response.setRecommendSeatReason("TRANSFER_PICKUP");
+                response.setActionRecommendSeat(true);
             }
         }
 

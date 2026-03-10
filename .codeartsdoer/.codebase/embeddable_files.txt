@@ -36,6 +36,7 @@ src/main/java/com/library/controller/NotificationTemplateController.java
 src/main/java/com/library/mapper/BookBorrowMapper.java
 src/main/java/com/library/util/SpringContextUtil.java
 src/main/java/com/library/service/BookCopyService.java
+src/main/java/com/library/task/SeatTempLeaveTask.java
 src/main/java/com/library/entity/LibraryBiblioStats.java
 src/main/java/com/library/mapper/LibraryBiblioStatsMapper.java
 src/main/java/com/library/controller/TestController.java
@@ -63,6 +64,7 @@ src/main/java/com/library/config/JadeProperties.java
 src/main/java/com/library/agent/dto/ContractNetMessage.java
 src/main/java/com/library/mapper/NotificationTemplateMapper.java
 src/main/java/com/library/dto/SeatInfoDTO.java
+src/main/java/com/library/dto/SeatReservationItemDTO.java
 src/main/java/com/library/mapper/EquipmentMapper.java
 src/main/java/com/library/controller/TaskTestController.java
 src/main/java/com/library/config/OpenApiConfig.java
@@ -80,7 +82,6 @@ src/test/java/com/library/MultiAgentLibraryApplicationTests.java
 src/main/java/com/library/mapper/BookReservationMapper.java
 src/main/java/com/library/task/TransferDelayCheckTask.java
 src/main/java/com/library/service/TransferNotificationService.java
-src/main/java/com/library/service/SeatReservationService.java
 src/main/java/com/library/service/BookBorrowService.java
 src/main/java/com/library/config/RabbitMQConfig.java
 src/main/java/com/library/consumer/NotificationConsumer.java

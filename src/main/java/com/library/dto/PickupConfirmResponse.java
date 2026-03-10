@@ -25,4 +25,18 @@ public class PickupConfirmResponse {
 
     @Schema(description = "取书馆名称")
     private String libraryName;
+
+    //以下为座位推荐相关字段(取书成功场景)
+
+    @Schema(description = "推荐占座的馆ID(通常为取书馆ID)")
+    private Long recommendSeatLibraryId;
+
+    @Schema(description = "推荐预约座位的日期(yyyy-MM-dd)")
+    private String recommendSeatDate;
+
+    @Schema(description = "座位推荐原因:TRANSFER_PICKUP/RESERVATION_PICKUP等")
+    private String recommendSeatReason;
+
+    @Schema(description = "是否建议前端展示“预约座位”入口")
+    private Boolean actionRecommendSeat;
 }

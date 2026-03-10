@@ -2,9 +2,7 @@ package com.library.dto;
 
 import lombok.Data;
 
-/**
- * 借书结果DTO
- */
+//借书结果DTO
 @Data
 public class BorrowResult {
     /**
@@ -61,4 +59,16 @@ public class BorrowResult {
      * 状态: SUCCESS/FAILED
      */
     private String status;
+
+    //推荐占座的馆ID(本地借阅等场景)
+    private Long recommendSeatLibraryId;
+
+    //推荐预约座位的日期(yyyy-MM-dd)
+    private String recommendSeatDate;
+
+    //推荐原因:LOCAL_LOAN/TRANSFER_PICKUP等
+    private String recommendSeatReason;
+
+    //是否建议前端展示“预约座位”入口
+    private Boolean actionRecommendSeat;
 }

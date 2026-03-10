@@ -22,12 +22,13 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.util.Map;
 
 //座位相关接口
 @Slf4j
 @RestController
 @RequestMapping("/api/seat")
-@Tag(name = "座位管理", description = "座位可用性查询与动态分配、创建预约")
+@Tag(name = "座位管理", description = "座位可用性查询与动态分配、创建预约、取消、签到与我的预约列表")
 public class SeatController {
 
     @Autowired
@@ -113,6 +114,91 @@ public class SeatController {
             log.error("取消座位预约异常", e);
             return Result.fail("取消座位预约失败:" + e.getMessage());
         }
+    }
+
+    @PostMapping("/reservation/check-in")
+    @Operation(summary = "座位签到", description = "用户到馆后对已预约的座位进行签到")
+    public Result<Void> checkIn(
+            @Parameter(description = "预约记录ID", required = true) @RequestParam Long reservationId,
+            @Parameter(description = "用户ID(校验本人)", required = true) @RequestParam Long userId) {
+        try {
+            log.info("座位签到: reservationId={}, userId={}", reservationId, userId);
+            seatReservationService.checkIn(reservationId, userId);
+            return Result.success("签到成功", null);
+        } catch (IllegalArgumentException e) {
+            log.warn("座位签到失败: {}", e.getMessage());
+            return Result.fail(400, e.getMessage());
+        } catch (Exception e) {
+            log.error("座位签到异常", e);
+            return Result.fail("座位签到失败:" + e.getMessage());
+        }
+    }
+
+    @PostMapping("/reservation/temp-leave")
+    @Operation(summary = "座位暂离", description = "对已签到的预约发起暂离,记录暂离时间窗口")
+    public Result<Void> tempLeave(
+            @Parameter(description = "预约记录ID", required = true) @RequestParam Long reservationId,
+            @Parameter(description = "用户ID(校验本人)", required = true) @RequestParam Long userId) {
+        try {
+            log.info("座位暂离: reservationId={}, userId={}", reservationId, userId);
+            seatReservationService.tempLeave(reservationId, userId);
+            return Result.success("暂离已生效", null);
+        } catch (IllegalArgumentException e) {
+            log.warn("座位暂离失败: {}", e.getMessage());
+            return Result.fail(400, e.getMessage());
+        } catch (Exception e) {
+            log.error("座位暂离异常", e);
+            return Result.fail("座位暂离失败:" + e.getMessage());
+        }
+    }
+
+    @PostMapping("/reservation/temp-leave/end")
+    @Operation(summary = "结束暂离", description = "用户返回座位,结束暂离并恢复正常使用")
+    public Result<Void> endTempLeave(
+            @Parameter(description = "预约记录ID", required = true) @RequestParam Long reservationId,
+            @Parameter(description = "用户ID(校验本人)", required = true) @RequestParam Long userId) {
+        try {
+            log.info("结束暂离: reservationId={}, userId={}", reservationId, userId);
+            seatReservationService.endTempLeave(reservationId, userId);
+            return Result.success("结束暂离成功", null);
+        } catch (IllegalArgumentException e) {
+            log.warn("结束暂离失败: {}", e.getMessage());
+            return Result.fail(400, e.getMessage());
+        } catch (Exception e) {
+            log.error("结束暂离异常", e);
+            return Result.fail("结束暂离失败:" + e.getMessage());
+        }
+    }
+
+    @PostMapping("/reservation/finish")
+    @Operation(summary = "结束使用", description = "用户主动结束座位使用,释放座位")
+    public Result<Void> finishUse(
+            @Parameter(description = "预约记录ID", required = true) @RequestParam Long reservationId,
+            @Parameter(description = "用户ID(校验本人)", required = true) @RequestParam Long userId) {
+        try {
+            log.info("结束使用: reservationId={}, userId={}", reservationId, userId);
+            seatReservationService.finishUse(reservationId, userId);
+            return Result.success("结束使用成功", null);
+        } catch (IllegalArgumentException e) {
+            log.warn("结束使用失败: {}", e.getMessage());
+            return Result.fail(400, e.getMessage());
+        } catch (Exception e) {
+            log.error("结束使用异常", e);
+            return Result.fail("结束使用失败:" + e.getMessage());
+        }
+    }
+
+    @GetMapping("/reservation/my")
+    @Operation(summary = "我的座位预约列表", description = "分页查询当前用户的座位预约,默认仅查今天及以后")
+    public Result<Map<String, Object>> getMyReservations(
+            @Parameter(description = "用户ID", required = true) @RequestParam Long userId,
+            @Parameter(description = "状态筛选(ACTIVE/CANCELED/COMPLETED/NO_SHOW)") @RequestParam(required = false) String status,
+            @Parameter(description = "预约日期起(yyyy-MM-dd)") @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM-dd") LocalDate fromDate,
+            @Parameter(description = "预约日期止(yyyy-MM-dd)") @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM-dd") LocalDate toDate,
+            @Parameter(description = "页码") @RequestParam(defaultValue = "1") int page,
+            @Parameter(description = "每页数量") @RequestParam(defaultValue = "10") int size) {
+        Map<String, Object> result = seatReservationService.getMyReservations(userId, status, fromDate, toDate, page, size);
+        return Result.success("查询成功", result);
     }
 }
 

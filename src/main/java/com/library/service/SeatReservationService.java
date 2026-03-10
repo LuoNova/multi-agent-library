@@ -1,8 +1,10 @@
 package com.library.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.library.config.BusinessRulesProperties;
 import com.library.dto.SeatReservationCreateRequest;
+import com.library.dto.SeatReservationItemDTO;
 import com.library.dto.SeatReservationResultDTO;
 import com.library.entity.Library;
 import com.library.entity.Seat;
@@ -17,9 +19,14 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 //座位预约创建服务
 @Slf4j
@@ -230,5 +237,260 @@ public class SeatReservationService {
         seatReservationMapper.updateById(reservation);
         seatMapper.updateStatus(reservation.getSeatId(), "AVAILABLE");
         log.info("取消座位预约成功: reservationId={}, userId={}, seatId={}", reservationId, userId, reservation.getSeatId());
+    }
+
+    //座位签到(仅限本人、仅限ACTIVE状态、支持提前15分钟和迟到no-show窗口内签到)
+    @Transactional(rollbackFor = Exception.class)
+    public void checkIn(Long reservationId, Long userId) {
+        SeatReservation reservation = seatReservationMapper.selectById(reservationId);
+        if (reservation == null) {
+            throw new IllegalArgumentException("预约不存在");
+        }
+        if (!reservation.getUserId().equals(userId)) {
+            throw new IllegalArgumentException("只能签到本人的预约");
+        }
+        if (!"ACTIVE".equals(reservation.getStatus())) {
+            throw new IllegalArgumentException("当前预约状态不可签到");
+        }
+
+        LocalDate reservationDate = reservation.getReservationDate();
+        LocalTime startTime = reservation.getStartTime();
+        if (reservationDate == null || startTime == null) {
+            throw new IllegalArgumentException("预约时间信息不完整,无法签到");
+        }
+
+        LocalDate today = LocalDate.now();
+        if (!today.equals(reservationDate)) {
+            throw new IllegalArgumentException("仅可在预约当日签到");
+        }
+
+        BusinessRulesProperties.SeatRules seatRules = businessRulesProperties.getSeat();
+        int noShowMinutes = seatRules.getNoShowAfterMinutes();
+        int earlyMinutes = 15;
+
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime startDateTime = LocalDateTime.of(reservationDate, startTime);
+        LocalDateTime earliestCheckInTime = startDateTime.minusMinutes(earlyMinutes);
+        LocalDateTime latestCheckInTime = startDateTime.plusMinutes(noShowMinutes);
+
+        if (now.isBefore(earliestCheckInTime)) {
+            throw new IllegalArgumentException("尚未到可签到时间(可提前" + earlyMinutes + "分钟签到)");
+        }
+        if (now.isAfter(latestCheckInTime)) {
+            throw new IllegalArgumentException("已超过可签到时间,请重新预约");
+        }
+
+        reservation.setCheckInTime(now);
+        seatReservationMapper.updateById(reservation);
+        log.info("座位签到成功: reservationId={}, userId={}, seatId={}, checkInTime={}",
+                reservationId, userId, reservation.getSeatId(), now);
+    }
+
+    //暂离(仅限本人、仅限当日、已签到且ACTIVE状态)
+    @Transactional(rollbackFor = Exception.class)
+    public void tempLeave(Long reservationId, Long userId) {
+        SeatReservation reservation = seatReservationMapper.selectById(reservationId);
+        if (reservation == null) {
+            throw new IllegalArgumentException("预约不存在");
+        }
+        if (!reservation.getUserId().equals(userId)) {
+            throw new IllegalArgumentException("只能操作本人的预约");
+        }
+        if (!"ACTIVE".equals(reservation.getStatus())) {
+            throw new IllegalArgumentException("当前预约状态不可暂离");
+        }
+        if (reservation.getCheckInTime() == null) {
+            throw new IllegalArgumentException("仅支持对已签到的预约暂离");
+        }
+
+        LocalDate reservationDate = reservation.getReservationDate();
+        LocalTime startTime = reservation.getStartTime();
+        LocalTime endTime = reservation.getEndTime();
+        if (reservationDate == null || startTime == null || endTime == null) {
+            throw new IllegalArgumentException("预约时间信息不完整,无法暂离");
+        }
+
+        LocalDate today = LocalDate.now();
+        if (!today.equals(reservationDate)) {
+            throw new IllegalArgumentException("仅可在预约当日暂离");
+        }
+
+        BusinessRulesProperties.SeatRules seatRules = businessRulesProperties.getSeat();
+        LocalTime nowTime = LocalTime.now();
+        int baseMinutes = seatRules.getTempLeaveDefaultMinutes();
+
+        BusinessRulesProperties.TempLeaveRule lunchRule = seatRules.getTempLeaveLunch();
+        if (isInRuleRange(nowTime, lunchRule)) {
+            baseMinutes = lunchRule.getMaxMinutes();
+        } else {
+            BusinessRulesProperties.TempLeaveRule dinnerRule = seatRules.getTempLeaveDinner();
+            if (isInRuleRange(nowTime, dinnerRule)) {
+                baseMinutes = dinnerRule.getMaxMinutes();
+            }
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime reservationEnd = LocalDateTime.of(reservationDate, endTime);
+        LocalDateTime baseDeadline = now.plusMinutes(baseMinutes);
+        if (baseDeadline.isAfter(reservationEnd)) {
+            baseDeadline = reservationEnd;
+        }
+        LocalDateTime forceDeadline = baseDeadline.plusMinutes(30);
+
+        reservation.setTempLeaveStartTime(now);
+        reservation.setTempLeaveDeadline(baseDeadline);
+        reservation.setTempLeaveForceDeadline(forceDeadline);
+        reservation.setTempLeaveStatus("IN_TEMP_LEAVE");
+        seatReservationMapper.updateById(reservation);
+
+        log.info("暂离开始: reservationId={}, userId={}, baseDeadline={}, forceDeadline={}",
+                reservationId, userId, baseDeadline, forceDeadline);
+    }
+
+    //结束暂离(仅限本人、仅限ACTIVE且处于暂离状态,且未超过强制截止时间)
+    @Transactional(rollbackFor = Exception.class)
+    public void endTempLeave(Long reservationId, Long userId) {
+        SeatReservation reservation = seatReservationMapper.selectById(reservationId);
+        if (reservation == null) {
+            throw new IllegalArgumentException("预约不存在");
+        }
+        if (!reservation.getUserId().equals(userId)) {
+            throw new IllegalArgumentException("只能操作本人的预约");
+        }
+        if (!"ACTIVE".equals(reservation.getStatus())) {
+            throw new IllegalArgumentException("当前预约状态不可结束暂离");
+        }
+        String tempStatus = reservation.getTempLeaveStatus();
+        if (!"IN_TEMP_LEAVE".equals(tempStatus) && !"TIMEOUT_WARNED".equals(tempStatus)) {
+            throw new IllegalArgumentException("当前预约未处于暂离状态");
+        }
+        LocalDateTime forceDeadline = reservation.getTempLeaveForceDeadline();
+        if (forceDeadline != null && LocalDateTime.now().isAfter(forceDeadline)) {
+            throw new IllegalArgumentException("暂离已超时,请重新预约");
+        }
+
+        reservation.setTempLeaveStartTime(null);
+        reservation.setTempLeaveDeadline(null);
+        reservation.setTempLeaveForceDeadline(null);
+        reservation.setTempLeaveStatus("NONE");
+        seatReservationMapper.updateById(reservation);
+
+        log.info("结束暂离成功: reservationId={}, userId={}", reservationId, userId);
+    }
+
+    //结束使用(主动离席,仅限本人、仅限ACTIVE状态)
+    @Transactional(rollbackFor = Exception.class)
+    public void finishUse(Long reservationId, Long userId) {
+        SeatReservation reservation = seatReservationMapper.selectById(reservationId);
+        if (reservation == null) {
+            throw new IllegalArgumentException("预约不存在");
+        }
+        if (!reservation.getUserId().equals(userId)) {
+            throw new IllegalArgumentException("只能操作本人的预约");
+        }
+        if (!"ACTIVE".equals(reservation.getStatus())) {
+            throw new IllegalArgumentException("当前预约状态不可结束使用");
+        }
+        reservation.setStatus("COMPLETED");
+        reservation.setTempLeaveStartTime(null);
+        reservation.setTempLeaveDeadline(null);
+        reservation.setTempLeaveForceDeadline(null);
+        reservation.setTempLeaveStatus("NONE");
+        seatReservationMapper.updateById(reservation);
+        Long seatId = reservation.getSeatId();
+        if (seatId != null) {
+            seatMapper.updateStatus(seatId, "AVAILABLE");
+        }
+        log.info("结束使用成功: reservationId={}, userId={}, seatId={}", reservationId, userId, seatId);
+    }
+
+    //我的座位预约列表(分页,默认仅查今天及以后)
+    public Map<String, Object> getMyReservations(Long userId, String status,
+                                                 LocalDate fromDate, LocalDate toDate,
+                                                 int page, int size) {
+        LambdaQueryWrapper<SeatReservation> w = new LambdaQueryWrapper<>();
+        w.eq(SeatReservation::getUserId, userId);
+        if (status != null && !status.trim().isEmpty()) {
+            w.eq(SeatReservation::getStatus, status.trim());
+        }
+        if (fromDate == null && toDate == null) {
+            w.ge(SeatReservation::getReservationDate, LocalDate.now());
+        } else {
+            if (fromDate != null) {
+                w.ge(SeatReservation::getReservationDate, fromDate);
+            }
+            if (toDate != null) {
+                w.le(SeatReservation::getReservationDate, toDate);
+            }
+        }
+        w.orderByAsc(SeatReservation::getReservationDate, SeatReservation::getStartTime);
+
+        Page<SeatReservation> pageObj = new Page<>(page, size);
+        Page<SeatReservation> result = seatReservationMapper.selectPage(pageObj, w);
+        List<SeatReservation> list = result.getRecords();
+        if (list.isEmpty()) {
+            Map<String, Object> out = new HashMap<>();
+            out.put("total", 0L);
+            out.put("page", page);
+            out.put("size", size);
+            out.put("records", new ArrayList<SeatReservationItemDTO>());
+            return out;
+        }
+
+        List<Long> seatIds = list.stream().map(SeatReservation::getSeatId).distinct().collect(Collectors.toList());
+        List<Seat> seats = seatMapper.selectBatchIds(seatIds);
+        Map<Long, Seat> seatMap = seats.stream().collect(Collectors.toMap(Seat::getId, s -> s));
+        List<Long> areaIds = seats.stream().map(Seat::getAreaId).distinct().collect(Collectors.toList());
+        List<SeatArea> areas = seatAreaMapper.selectBatchIds(areaIds);
+        Map<Long, SeatArea> areaMap = areas.stream().collect(Collectors.toMap(SeatArea::getId, a -> a));
+
+        List<SeatReservationItemDTO> records = new ArrayList<>();
+        for (SeatReservation r : list) {
+            SeatReservationItemDTO dto = new SeatReservationItemDTO();
+            dto.setReservationId(r.getId());
+            dto.setStatus(r.getStatus());
+            dto.setReservationDate(r.getReservationDate());
+            dto.setStartTime(r.getStartTime());
+            dto.setEndTime(r.getEndTime());
+            dto.setCheckInTime(r.getCheckInTime());
+            dto.setLibraryId(r.getLibraryId());
+            dto.setSource(r.getSource());
+            dto.setBorrowId(r.getBorrowId());
+            Seat seat = seatMap.get(r.getSeatId());
+            if (seat != null) {
+                dto.setSeatId(seat.getId());
+                dto.setSeatNo(seat.getSeatNo());
+                dto.setHasPower(seat.getHasPower());
+                dto.setAreaId(seat.getAreaId());
+                SeatArea area = areaMap.get(seat.getAreaId());
+                if (area != null) {
+                    dto.setAreaName(area.getName());
+                    dto.setFloor(area.getFloor());
+                }
+            }
+            records.add(dto);
+        }
+
+        Map<String, Object> out = new HashMap<>();
+        out.put("total", result.getTotal());
+        out.put("page", page);
+        out.put("size", size);
+        out.put("records", records);
+        return out;
+    }
+
+    //判断当前时间是否在暂离规则区间内
+    private boolean isInRuleRange(LocalTime now, BusinessRulesProperties.TempLeaveRule rule) {
+        if (rule == null || rule.getStart() == null || rule.getEnd() == null) {
+            return false;
+        }
+        try {
+            LocalTime start = LocalTime.parse(rule.getStart().trim());
+            LocalTime end = LocalTime.parse(rule.getEnd().trim());
+            return !now.isBefore(start) && !now.isAfter(end);
+        } catch (Exception e) {
+            log.warn("解析暂离规则时间失败: start={}, end={}", rule.getStart(), rule.getEnd());
+            return false;
+        }
     }
 }
