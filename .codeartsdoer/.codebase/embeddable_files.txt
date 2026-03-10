@@ -98,4 +98,3 @@ src/main/java/com/library/controller/BorrowController.java
 src/main/java/com/library/entity/BookReservation.java
 src/main/java/com/library/service/impl/NotificationTemplateServiceImpl.java
 src/main/java/com/library/entity/Equipment.java
-src/main/java/com/library/controller/SeatController.java
