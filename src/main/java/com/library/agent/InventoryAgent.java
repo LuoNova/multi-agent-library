@@ -57,19 +57,35 @@ public class InventoryAgent extends Agent {
         addBehaviour(new CFPHandler());
     }
 
-    //注册到目录服务（便于UserDemandAgent发现）
+    //注册到目录服务（便于UserDemandAgent发现及DF图形化界面展示）
     private void registerService() {
-        try {
-            DFAgentDescription dfd = new DFAgentDescription();
-            dfd.setName(getAID());
-            ServiceDescription sd = new ServiceDescription();
-            sd.setType("INVENTORY_SERVICE");
-            sd.setName("Inventory-" + libraryName);
-            dfd.addServices(sd);
-            DFService.register(this, dfd);
-            log.info("已注册到DF服务: {}", getAID().getName());
-        } catch (FIPAException e) {
-            log.error("注册DF服务失败", e);
+        int maxRetries = 3;
+        int delayMs = 500;
+        for (int i = 0; i < maxRetries; i++) {
+            try {
+                DFAgentDescription dfd = new DFAgentDescription();
+                dfd.setName(getAID());
+                ServiceDescription sd = new ServiceDescription();
+                sd.setType("INVENTORY_SERVICE");
+                sd.setName("Inventory-" + (libraryName != null ? libraryName : "Library-" + libraryId));
+                dfd.addServices(sd);
+                DFService.register(this, dfd);
+                log.info("已注册到DF服务: {} (type=INVENTORY_SERVICE, name={})", getAID().getName(), sd.getName());
+                return;
+            } catch (FIPAException e) {
+                log.warn("注册DF服务失败(尝试 {}/{}): {}", i + 1, maxRetries, e.getMessage());
+                if (i < maxRetries - 1) {
+                    try {
+                        Thread.sleep(delayMs);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        log.error("注册DF时被中断", ie);
+                        return;
+                    }
+                } else {
+                    log.error("注册DF服务最终失败", e);
+                }
+            }
         }
     }
 

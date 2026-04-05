@@ -93,6 +93,7 @@ src/main/java/com/library/mapper/RepairTicketMapper.java
 src/main/java/com/library/task/InventoryBalanceTask.java
 src/main/java/com/library/entity/TransferSuggestion.java
 src/main/java/com/library/MultiAgentLibraryApplication.java
+src/main/java/com/library/agent/SeatAgent.java
 src/main/java/com/library/entity/SeatArea.java
 src/main/java/com/library/controller/BorrowController.java
 src/main/java/com/library/entity/BookReservation.java

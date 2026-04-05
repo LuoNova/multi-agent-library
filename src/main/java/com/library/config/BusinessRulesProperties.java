@@ -4,6 +4,9 @@ import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
+import java.util.List;
+
 //业务规则配置属性类，支持动态配置
 @Data
 @Component
@@ -24,6 +27,9 @@ public class BusinessRulesProperties {
 
     //座位规则
     private SeatRules seat = new SeatRules();
+
+    //故障报修规则（与 application-business-rules.yml 中 library.business-rules.fault 对应）
+    private FaultRules fault = new FaultRules();
 
     @Data
     public static class BorrowRules {
@@ -89,5 +95,21 @@ public class BusinessRulesProperties {
         private String end;
         //最大暂离分钟数
         private int maxMinutes = 120;
+    }
+
+    @Data
+    public static class FaultRules {
+        /**
+         * 参与“资源不可用”判断的工单状态，须与 tb_fault_report.status 存库英文码一致。
+         */
+        private List<String> activeStatuses = new ArrayList<>(List.of("REPORTED", "ACCEPTED", "IN_PROGRESS"));
+        /**
+         * 参与排除的严重程度（low/medium/high）。
+         */
+        private List<String> excludeSeverities = new ArrayList<>(List.of("medium", "high"));
+        /**
+         * true：馆级仅 high 严重度参与整馆排除；false：馆级与座位等同，按 excludeSeverities 判断。
+         */
+        private boolean libraryExcludeOnlyHigh = true;
     }
 }

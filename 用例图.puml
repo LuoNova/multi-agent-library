@@ -1,0 +1,35 @@
+@startuml
+left to right direction
+
+actor "用户" as User
+actor "管理员" as Admin
+
+rectangle "故障报修模块" {
+
+usecase "提交故障报修" as UC1
+usecase "处理报修请求" as UC2
+usecase "查询个人信息" as UC3
+usecase "查询借阅记录" as UC4
+usecase "系统资源管理" as UC5
+usecase "管理用户账号" as UC6
+usecase "管理图书资源" as UC7
+usecase "管理座位资源" as UC8
+}
+
+User -[hidden]-> UC1
+UC1 -[hidden]-> Admin
+
+User --> UC1
+User --> UC3
+User --> UC4
+
+Admin --> UC2
+Admin --> UC5
+
+UC2 ..> UC1 : <<extend>>
+
+UC5 ..> UC6 : <<include>>
+UC5 ..> UC7 : <<include>>
+UC5 ..> UC8 : <<include>>
+
+@enduml

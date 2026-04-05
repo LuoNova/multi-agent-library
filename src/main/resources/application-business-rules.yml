@@ -50,3 +50,14 @@ library:
         start: "17:00"
         end: "19:00"
         max-minutes: 120
+
+    # 故障报修（与 tb_fault_report.status 英文码、BusinessRulesProperties.FaultRules 一致）
+    fault:
+      active-statuses:
+        - REPORTED
+        - ACCEPTED
+        - IN_PROGRESS
+      exclude-severities:
+        - medium
+        - high
+      library-exclude-only-high: true
