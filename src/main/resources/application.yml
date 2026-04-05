@@ -56,7 +56,8 @@ jade:
     lib2:com.library.agent.InventoryAgent(2,文科馆);
     lib3:com.library.agent.InventoryAgent(3,工程馆);
     balance:com.library.agent.InventoryBalanceAgent;
-    seat:com.library.agent.SeatAgent
+    seat:com.library.agent.SeatAgent;
+    fault:com.library.agent.FaultRepairAgent
 
 server:
   port: 8080

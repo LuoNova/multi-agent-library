@@ -24,7 +24,7 @@ public class FaultController {
     private final FaultService faultService;
 
     @PostMapping("/report")
-    @Operation(summary = "提交故障工单", description = "libraryId/areaId/seatId/equipmentId 至少填一个；创建后 status=REPORTED")
+    @Operation(summary = "提交故障工单", description = "至少填一个目标；非空 id 须存在且层级一致；创建后 status=REPORTED；含 equipmentId 时同步设备为 FAULT")
     public Result<FaultReportVO> report(@RequestBody FaultReportCreateRequest request) {
         FaultReportVO vo = faultService.createReport(request);
         return Result.success(vo);

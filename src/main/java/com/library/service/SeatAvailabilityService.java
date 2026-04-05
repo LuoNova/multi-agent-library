@@ -4,6 +4,8 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.library.config.BusinessRulesProperties;
 import com.library.dto.SeatAvailabilityResultDTO;
 import com.library.dto.SeatInfoDTO;
+import com.library.dto.fault.FaultHealthQueryRequest;
+import com.library.dto.fault.FaultHealthQueryResponse;
 import com.library.entity.Seat;
 import com.library.entity.SeatArea;
 import com.library.entity.SeatReservation;
@@ -37,6 +39,9 @@ public class SeatAvailabilityService {
 
     @Autowired
     private BusinessRulesProperties businessRulesProperties;
+
+    @Autowired
+    private FaultService faultService;
 
     //查询可用座位并按需进行动态分配
     public SeatAvailabilityResultDTO queryAvailableSeats(Long libraryId,
@@ -121,6 +126,8 @@ public class SeatAvailabilityService {
             candidates.add(dto);
         }
 
+        candidates = filterByFaultHealth(libraryId, candidates);
+
         //排序:有电源优先 -> 楼层升序 -> 区域名升序 -> 座位编号升序
         candidates.sort(Comparator
                 .comparing(SeatInfoDTO::getHasPower, Comparator.nullsLast(Comparator.reverseOrder()))
@@ -188,6 +195,63 @@ public class SeatAvailabilityService {
             }
         }
         return false;
+    }
+
+    /**
+     * 方案1：对每个候选座位分别评估馆级、区域级、座位级健康（不显式区域故障冒泡到所有座位）。
+     */
+    private List<SeatInfoDTO> filterByFaultHealth(Long libraryId, List<SeatInfoDTO> candidates) {
+        if (candidates.isEmpty()) {
+            return candidates;
+        }
+        try {
+            FaultHealthQueryRequest req = new FaultHealthQueryRequest();
+            List<FaultHealthQueryRequest.FaultHealthResourceRef> refs = new ArrayList<>();
+            FaultHealthQueryRequest.FaultHealthResourceRef libRef = new FaultHealthQueryRequest.FaultHealthResourceRef();
+            libRef.setResourceType("LIBRARY");
+            libRef.setResourceId(libraryId);
+            refs.add(libRef);
+            Set<Long> areaIds = new LinkedHashSet<>();
+            for (SeatInfoDTO s : candidates) {
+                if (s.getAreaId() != null) {
+                    areaIds.add(s.getAreaId());
+                }
+            }
+            for (Long aid : areaIds) {
+                FaultHealthQueryRequest.FaultHealthResourceRef ar = new FaultHealthQueryRequest.FaultHealthResourceRef();
+                ar.setResourceType("SEAT_AREA");
+                ar.setResourceId(aid);
+                refs.add(ar);
+            }
+            for (SeatInfoDTO s : candidates) {
+                FaultHealthQueryRequest.FaultHealthResourceRef sr = new FaultHealthQueryRequest.FaultHealthResourceRef();
+                sr.setResourceType("SEAT");
+                sr.setResourceId(s.getSeatId());
+                refs.add(sr);
+            }
+            req.setResources(refs);
+            FaultHealthQueryResponse resp = faultService.healthQuery(req);
+            Map<String, Boolean> available = new HashMap<>();
+            for (FaultHealthQueryResponse.FaultHealthItemVO item : resp.getResults()) {
+                if (item.getResourceType() != null && item.getResourceId() != null) {
+                    available.put(item.getResourceType() + ":" + item.getResourceId(), item.isAvailable());
+                }
+            }
+            List<SeatInfoDTO> kept = new ArrayList<>();
+            for (SeatInfoDTO s : candidates) {
+                Boolean libOk = available.get("LIBRARY:" + libraryId);
+                Boolean areaOk = s.getAreaId() == null ? Boolean.TRUE : available.get("SEAT_AREA:" + s.getAreaId());
+                Boolean seatOk = available.get("SEAT:" + s.getSeatId());
+                if (Boolean.FALSE.equals(libOk) || Boolean.FALSE.equals(areaOk) || Boolean.FALSE.equals(seatOk)) {
+                    continue;
+                }
+                kept.add(s);
+            }
+            return kept;
+        } catch (Exception ex) {
+            log.warn("故障健康过滤失败，本次跳过过滤: {}", ex.getMessage());
+            return candidates;
+        }
     }
 }
 

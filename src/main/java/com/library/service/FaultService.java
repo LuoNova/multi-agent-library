@@ -4,13 +4,23 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.library.config.BusinessRulesProperties;
+import com.library.constant.EquipmentConstants;
 import com.library.constant.FaultConstants;
 import com.library.dto.fault.*;
+import com.library.entity.Equipment;
 import com.library.entity.FaultReport;
+import com.library.entity.Library;
+import com.library.entity.Seat;
+import com.library.entity.SeatArea;
 import com.library.exception.BusinessException;
+import com.library.mapper.EquipmentMapper;
 import com.library.mapper.FaultReportMapper;
+import com.library.mapper.LibraryMapper;
+import com.library.mapper.SeatAreaMapper;
+import com.library.mapper.SeatMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
@@ -23,7 +33,12 @@ public class FaultService {
 
     private final FaultReportMapper faultReportMapper;
     private final BusinessRulesProperties businessRulesProperties;
+    private final LibraryMapper libraryMapper;
+    private final SeatAreaMapper seatAreaMapper;
+    private final SeatMapper seatMapper;
+    private final EquipmentMapper equipmentMapper;
 
+    @Transactional(rollbackFor = Exception.class)
     public FaultReportVO createReport(FaultReportCreateRequest req) {
         if (!hasAnyTarget(req)) {
             throw new BusinessException("报修目标不能全部为空，请至少填写 libraryId、areaId、seatId、equipmentId 之一");
@@ -41,6 +56,8 @@ public class FaultService {
             throw new BusinessException("reportSource 无效，允许值: USER, MONITOR, ADMIN, SYSTEM");
         }
 
+        validateStrict(req);
+
         FaultReport e = new FaultReport();
         e.setLibraryId(req.getLibraryId());
         e.setAreaId(req.getAreaId());
@@ -57,7 +74,9 @@ public class FaultService {
         e.setUpdatedTime(LocalDateTime.now());
 
         faultReportMapper.insert(e);
-        return toVO(faultReportMapper.selectById(e.getId()));
+        FaultReport saved = faultReportMapper.selectById(e.getId());
+        syncEquipmentStatusForTicket(saved);
+        return toVO(saved);
     }
 
     public FaultReportVO getById(Long id) {
@@ -117,6 +136,7 @@ public class FaultService {
         return out;
     }
 
+    @Transactional(rollbackFor = Exception.class)
     public FaultReportVO patchStatus(Long id, FaultStatusPatchRequest req) {
         if (!StringUtils.hasText(req.getStatus()) || !FaultConstants.STATUSES.contains(req.getStatus())) {
             throw new BusinessException("status 无效，允许值: " + FaultConstants.STATUSES);
@@ -142,7 +162,9 @@ public class FaultService {
             u.set(FaultReport::getResolvedTime, null);
         }
         faultReportMapper.update(null, u);
-        return toVO(faultReportMapper.selectById(id));
+        FaultReport updated = faultReportMapper.selectById(id);
+        syncEquipmentStatusForTicket(updated);
+        return toVO(updated);
     }
 
     public FaultHealthQueryResponse healthQuery(FaultHealthQueryRequest request) {
@@ -175,6 +197,124 @@ public class FaultService {
             resp.getResults().add(item);
         }
         return resp;
+    }
+
+    /**
+     * 设备管理将状态改为 FAULT 时调用：若无未结工单则自动建 SYSTEM 工单（不再回写设备状态）。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void createAutoReportForEquipmentFailure(Long equipmentId, Long libraryId) {
+        List<String> active = resolveActiveStatuses();
+        LambdaQueryWrapper<FaultReport> w = new LambdaQueryWrapper<>();
+        w.eq(FaultReport::getEquipmentId, equipmentId);
+        w.in(FaultReport::getStatus, active);
+        if (faultReportMapper.selectCount(w) > 0) {
+            return;
+        }
+        FaultReport e = new FaultReport();
+        e.setLibraryId(libraryId);
+        e.setEquipmentId(equipmentId);
+        e.setFaultType("other");
+        e.setSeverity("medium");
+        e.setStatus(FaultConstants.STATUS_REPORTED);
+        e.setTitle("设备状态变更为故障（系统自动）");
+        e.setReportSource("SYSTEM");
+        e.setCreatedTime(LocalDateTime.now());
+        e.setUpdatedTime(LocalDateTime.now());
+        faultReportMapper.insert(e);
+    }
+
+    /**
+     * 设备管理将状态从 FAULT 改为 NORMAL 时调用：关闭该设备上所有未结工单。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void closeActiveFaultsForEquipment(Long equipmentId) {
+        List<String> active = resolveActiveStatuses();
+        LocalDateTime now = LocalDateTime.now();
+        LambdaUpdateWrapper<FaultReport> u = new LambdaUpdateWrapper<>();
+        u.eq(FaultReport::getEquipmentId, equipmentId);
+        u.in(FaultReport::getStatus, active);
+        u.set(FaultReport::getStatus, FaultConstants.STATUS_CLOSED);
+        u.set(FaultReport::getResolvedTime, now);
+        u.set(FaultReport::getUpdatedTime, now);
+        faultReportMapper.update(null, u);
+    }
+
+    private List<String> resolveActiveStatuses() {
+        BusinessRulesProperties.FaultRules rules = businessRulesProperties.getFault();
+        List<String> active = rules.getActiveStatuses();
+        if (active == null || active.isEmpty()) {
+            return List.of("REPORTED", "ACCEPTED", "IN_PROGRESS");
+        }
+        return active;
+    }
+
+    private void syncEquipmentStatusForTicket(FaultReport e) {
+        if (e == null || e.getEquipmentId() == null) {
+            return;
+        }
+        Equipment equipment = equipmentMapper.selectById(e.getEquipmentId());
+        if (equipment == null) {
+            return;
+        }
+        String st = e.getStatus();
+        String target = (FaultConstants.STATUS_RESTORED.equals(st) || FaultConstants.STATUS_CLOSED.equals(st))
+                ? EquipmentConstants.STATUS_NORMAL
+                : EquipmentConstants.STATUS_FAULT;
+        if (target.equals(equipment.getStatus())) {
+            return;
+        }
+        equipment.setStatus(target);
+        equipment.setUpdateTime(LocalDateTime.now());
+        equipmentMapper.updateById(equipment);
+    }
+
+    private void validateStrict(FaultReportCreateRequest req) {
+        if (req.getLibraryId() != null) {
+            Library lib = libraryMapper.selectById(req.getLibraryId());
+            if (lib == null) {
+                throw new BusinessException("libraryId 不存在: " + req.getLibraryId());
+            }
+        }
+        if (req.getAreaId() != null) {
+            SeatArea area = seatAreaMapper.selectById(req.getAreaId());
+            if (area == null) {
+                throw new BusinessException("areaId 不存在: " + req.getAreaId());
+            }
+            if (req.getLibraryId() != null && !Objects.equals(area.getLibraryId(), req.getLibraryId())) {
+                throw new BusinessException("areaId 与 libraryId 不匹配（区域不属于该馆）");
+            }
+        }
+        if (req.getSeatId() != null) {
+            Seat seat = seatMapper.selectById(req.getSeatId());
+            if (seat == null) {
+                throw new BusinessException("seatId 不存在: " + req.getSeatId());
+            }
+            SeatArea seatArea = seatAreaMapper.selectById(seat.getAreaId());
+            if (seatArea == null) {
+                throw new BusinessException("座位关联的区域不存在");
+            }
+            if (req.getAreaId() != null && !Objects.equals(seat.getAreaId(), req.getAreaId())) {
+                throw new BusinessException("seatId 与 areaId 不匹配");
+            }
+            if (req.getLibraryId() != null && !Objects.equals(seatArea.getLibraryId(), req.getLibraryId())) {
+                throw new BusinessException("seatId 与 libraryId 不匹配（座位不在该馆）");
+            }
+        }
+        if (req.getEquipmentId() != null) {
+            Equipment equipment = equipmentMapper.selectById(req.getEquipmentId());
+            if (equipment == null) {
+                throw new BusinessException("equipmentId 不存在: " + req.getEquipmentId());
+            }
+            if (req.getLibraryId() != null && !Objects.equals(equipment.getLibraryId(), req.getLibraryId())) {
+                throw new BusinessException("equipmentId 与 libraryId 不匹配");
+            }
+            if (req.getAreaId() != null) {
+                if (equipment.getAreaId() == null || !Objects.equals(equipment.getAreaId(), req.getAreaId())) {
+                    throw new BusinessException("equipmentId 与 areaId 不匹配");
+                }
+            }
+        }
     }
 
     private FaultHealthQueryResponse.FaultHealthItemVO evaluateHealth(
