@@ -17,6 +17,9 @@ public class Equipment {
     //所在馆ID
     private Long libraryId;
 
+    //所属区域(tb_seat_area.id)，可空
+    private Long areaId;
+
     //设备类型:自助借还机/书架/电脑/空调等
     private String type;
 
@@ -29,9 +32,15 @@ public class Equipment {
     //状态:NORMAL/FAULT/MAINTAIN/DISABLED
     private String status;
 
+    //备注
+    private String remark;
+
     //安装时间
     private LocalDateTime installTime;
 
     //创建时间
     private LocalDateTime createTime;
+
+    //更新时间
+    private LocalDateTime updateTime;
 }
