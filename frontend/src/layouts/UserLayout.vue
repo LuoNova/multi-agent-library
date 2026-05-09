@@ -24,6 +24,7 @@ function logout() {
         <el-menu-item index="/u/borrow">借书申请</el-menu-item>
         <el-menu-item index="/u/return">还书</el-menu-item>
         <el-menu-item index="/u/pickup">取书确认</el-menu-item>
+        <el-menu-item index="/u/borrow-history">我的借阅记录</el-menu-item>
         <el-menu-item index="/u/transfer">我的调拨与进度</el-menu-item>
         <el-menu-item index="/u/seat">座位预约</el-menu-item>
         <el-menu-item index="/u/fault">故障报修</el-menu-item>

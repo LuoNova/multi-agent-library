@@ -57,6 +57,12 @@ const router = createRouter({
           meta: { title: '取书确认' },
         },
         {
+          path: 'borrow-history',
+          name: 'userBorrowHistory',
+          component: () => import('@/views/BorrowHistoryView.vue'),
+          meta: { title: '我的借阅记录' },
+        },
+        {
           path: 'transfer',
           name: 'userTransfer',
           component: () => import('@/views/TransferUserView.vue'),

@@ -7,6 +7,7 @@ const cards = [
   { title: '借书', desc: '发起借书 / 跨馆协商', path: '/u/borrow' },
   { title: '还书', desc: '归还副本', path: '/u/return' },
   { title: '取书', desc: '到馆确认取书', path: '/u/pickup' },
+  { title: '借阅记录', desc: '历史借阅流水与状态', path: '/u/borrow-history' },
   { title: '我的调拨', desc: '调拨进度与我的调拨列表', path: '/u/transfer' },
   { title: '座位', desc: '可用查询与预约', path: '/u/seat' },
   { title: '故障报修', desc: '提交工单', path: '/u/fault' },

@@ -2,6 +2,7 @@ package com.library.controller;
 
 import com.library.common.Result;
 import com.library.entity.TransferSuggestion;
+import com.library.mapper.TransferSuggestionMapper;
 import com.library.service.InventoryBalanceService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -22,6 +23,9 @@ public class TransferSuggestionController {
     @Autowired
     private InventoryBalanceService balanceService;
 
+    @Autowired
+    private TransferSuggestionMapper transferSuggestionMapper;
+
     @GetMapping("/list")
     @Operation(summary = "查询调拨建议列表", description = "查询所有待审批的调拨建议")
     public Result<List<TransferSuggestion>> listSuggestions() {
@@ -40,8 +44,10 @@ public class TransferSuggestionController {
             @Parameter(description = "调拨建议ID", required = true)
             @PathVariable Long id) {
         try {
-            //TODO: 实现根据ID查询
-            TransferSuggestion suggestion = null;
+            TransferSuggestion suggestion = transferSuggestionMapper.selectById(id);
+            if (suggestion == null) {
+                return Result.fail(404, "调拨建议不存在");
+            }
             return Result.success("查询成功", suggestion);
         } catch (Exception e) {
             log.error("查询调拨建议详情失败", e);
